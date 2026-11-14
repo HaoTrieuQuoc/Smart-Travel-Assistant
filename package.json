@@ -1,0 +1,32 @@
+{
+  "name": "smart-travel-assistant",
+  "version": "1.0.0",
+  "description": "Enterprise Corporate Travel Automation Platform on AWS Serverless and Generative AI",
+  "main": "lambda/slack_handler.js",
+  "scripts": {
+    "test:pr": "node scripts/test_ai_pr.js",
+    "init:sheets": "node scripts/init_and_test.js",
+    "sync:audit": "node scripts/sync_and_audit.js",
+    "reminder": "node scripts/reminder_worker.js",
+    "start:local": "node scripts/slack_server.js",
+    "lint:syntax": "node --check lambda/common.js && node --check lambda/ai_ocr_service.js && node --check lambda/slack_handler.js && node --check lambda/reminder_cron.js"
+  },
+  "keywords": [
+    "aws",
+    "serverless",
+    "lambda",
+    "dynamodb",
+    "api-gateway",
+    "eventbridge",
+    "terraform",
+    "slack-bot",
+    "generative-ai",
+    "multimodal-ocr",
+    "google-sheets-api"
+  ],
+  "author": "Trieu Quoc Hao",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

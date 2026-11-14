@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Tracker - Kế Hoạch Xây Dựng Hệ Thống (5-Day Build Plan)</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --accent-blue: #2563eb;
+            --accent-indigo: #4f46e5;
+            --accent-emerald: #059669;
+            --accent-amber: #d97706;
+            --accent-rose: #e11d48;
+            --border-color: #e2e8f0;
+            --surface-subtle: #f8fafc;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f1f5f9;
+            color: var(--text-main);
+            line-height: 1.6;
+            padding-bottom: 60px;
+        }
+
+        /* Header Banner */
+        header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+            color: #ffffff;
+            padding: 48px 24px;
+            border-bottom: 4px solid #3b82f6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .badge-top {
+            display: inline-block;
+            background: rgba(59, 130, 246, 0.25);
+            border: 1px solid #60a5fa;
+            color: #93c5fd;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 999px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+        }
+
+        header h1 {
+            font-size: 34px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            letter-spacing: -0.02em;
+        }
+
+        header p.subtitle {
+            color: #cbd5e1;
+            font-size: 17px;
+            max-width: 850px;
+        }
+
+        .meta-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            font-size: 14px;
+            color: #e2e8f0;
+        }
+
+        .meta-item strong {
+            color: #60a5fa;
+        }
+
+        /* Main Layout */
+        main {
+            max-width: 1200px;
+            margin: 32px auto 0;
+            padding: 0 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        section {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05);
+            padding: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding-bottom: 14px;
+            border-bottom: 2px solid #f1f5f9;
+        }
+
+        .section-num {
+            background: var(--accent-blue);
+            color: #fff;
+            font-weight: 700;
+            font-size: 15px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .section-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Grid Cards */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--surface-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .card h3 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .card p {
+            font-size: 14.5px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .card ul {
+            padding-left: 18px;
+            font-size: 14px;
+            color: #334155;
+        }
+
+        .card ul li {
+            margin-bottom: 6px;
+        }
+
+        .tag {
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 3px 9px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .tag-aws { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+        .tag-ai { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
+        .tag-slack { background: #fce7f3; color: #be185d; border: 1px solid #fbcfe8; }
+        .tag-gcp { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .tag-infra { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+
+        /* Architecture Flow Box */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .flow-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            background: #f8fafc;
+            border-left: 4px solid var(--accent-blue);
+            padding: 16px 20px;
+            border-radius: 8px;
+            border-top: 1px solid var(--border-color);
+            border-right: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .flow-title {
+            font-weight: 700;
+            font-size: 14.5px;
+            min-width: 220px;
+            color: #1e293b;
+        }
+
+        .flow-steps {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 13.5px;
+        }
+
+        .step-pill {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 500;
+            color: #0f172a;
+        }
+
+        .arrow {
+            color: #64748b;
+            font-weight: bold;
+        }
+
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            background: #1e293b;
+            color: #ffffff;
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        tr:nth-child(even) td {
+            background: #f8fafc;
+        }
+
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            background: #e2e8f0;
+            color: #0f172a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12.5px;
+        }
+
+        /* 5-Day Timeline */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .day-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #ffffff;
+        }
+
+        .day-header {
+            padding: 16px 24px;
+            color: #ffffff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .day-1 .day-header { background: linear-gradient(90deg, #1e40af, #3b82f6); }
+        .day-2 .day-header { background: linear-gradient(90deg, #4338ca, #6366f1); }
+        .day-3 .day-header { background: linear-gradient(90deg, #047857, #10b981); }
+        .day-4 .day-header { background: linear-gradient(90deg, #6d28d9, #8b5cf6); }
+        .day-5 .day-header { background: linear-gradient(90deg, #b45309, #f59e0b); }
+
+        .day-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .day-focus {
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-weight: 600;
+        }
+
+        .day-body {
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 850px) {
+            .day-body {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .task-list h4, .deliverable-box h4 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #475569;
+            margin-bottom: 12px;
+        }
+
+        .task-list ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .task-list li {
+            position: relative;
+            padding-left: 26px;
+            margin-bottom: 10px;
+            font-size: 14.5px;
+            color: #1e293b;
+        }
+
+        .task-list li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            top: 1px;
+            width: 18px;
+            height: 18px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .deliverable-box {
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .deliverable-box ul {
+            padding-left: 18px;
+            font-size: 13.5px;
+            color: #334155;
+        }
+
+        .deliverable-box li {
+            margin-bottom: 6px;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #64748b;
+            font-size: 13.5px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="container">
+        <span class="badge-top">Project Implementation Blueprint</span>
+        <h1>Dự Án: Travel Tracker (Slack AI & Workflow Automation)</h1>
+        <p class="subtitle">
+            Kế hoạch chi tiết xây dựng sản phẩm trong 5 ngày: Tự động hóa quản lý lịch trình công tác của các Sếp qua Slack, đồng bộ hai chiều Google Sheets & DynamoDB, kiểm toán dữ liệu tự động và tích hợp AI Agent đọc vé máy bay.
+        </p>
+        <div class="meta-bar">
+            <div class="meta-item"><strong>Giao diện chính:</strong> Slack (Modals, Slash Commands, DM & AI Agent)</div>
+            <div class="meta-item"><strong>Cloud Platform:</strong> AWS Serverless & Amazon Bedrock</div>
+            <div class="meta-item"><strong>Thời gian triển khai:</strong> 5 Ngày (Sprint MVP)</div>
+            <div class="meta-item"><strong>Đối tượng sử dụng:</strong> Biz Admin & Ban Giám Đốc (C-Level/Managers)</div>
+        </div>
+    </div>
+</header>
+
+<main>
+
+    <!-- SECTION 1: KIẾN TRÚC LUỒNG DỮ LIỆU -->
+    <section>
+        <div class="section-header">
+            <div class="section-num">1</div>
+            <h2>Kiến Trúc Luồng Hoạt Động (System Workflows)</h2>
+        </div>
+        <p style="margin-bottom: 18px; color: #475569; font-size: 15px;">
+            Hệ thống bao gồm 4 luồng xử lý cốt lõi bám sát 8 yêu cầu nghiệp vụ của dự án:
+        </p>
+        <div class="flow-container">
+            <div class="flow-row">
+                <div class="flow-title">Luồng 1: Daily Sync & Audit<br><small style="color:#64748b; font-weight:normal;">(Yêu cầu 1, 2, 3, 6)</small></div>
+                <div class="flow-steps">
+                    <span class="step-pill">EventBridge (Daily Cron)</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Lambda Sync Worker</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Google Sheets API (Service Account)</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Check Diff & Validate Format</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Update DynamoDB + Báo lỗi vào Slack Channel Admin</span>
+                </div>
+            </div>
+
+            <div class="flow-row" style="border-left-color: #4f46e5;">
+                <div class="flow-title">Luồng 2: Admin Slash Command<br><small style="color:#64748b; font-weight:normal;">(Yêu cầu 7)</small></div>
+                <div class="flow-steps">
+                    <span class="step-pill">Slack Slash Command (<code>/travel-admin</code>)</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Slack Interactive Modal</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">API Gateway + Lambda</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Ghi thẳng Google Sheets & DynamoDB + Trigger Test/Automate</span>
+                </div>
+            </div>
+
+            <div class="flow-row" style="border-left-color: #059669;">
+                <div class="flow-title">Luồng 3: 24h Flight Reminder<br><small style="color:#64748b; font-weight:normal;">(Yêu cầu 4, 5)</small></div>
+                <div class="flow-steps">
+                    <span class="step-pill">EventBridge Schedule</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Lambda Reminder</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Tra mã IATA + Amazon Bedrock (Tạo cẩm nang điểm đáp & đồ cần mang)</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Gửi Email (Amazon SES) + Slack Bot DM</span>
+                </div>
+            </div>
+
+            <div class="flow-row" style="border-left-color: #d97706;">
+                <div class="flow-title">Luồng 4: Slack AI Agent & OCR<br><small style="color:#64748b; font-weight:normal;">(Yêu cầu 8)</small></div>
+                <div class="flow-steps">
+                    <span class="step-pill">User Chat / Upload Ảnh Vé lên Slack</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Lambda Agent Handler</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Amazon Bedrock Vision (Trích xuất thông tin vé / Tạo PR)</span>
+                    <span class="arrow">→</span>
+                    <span class="step-pill">Điền tự động vào Google Sheets & DynamoDB</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION 2: AWS SERVICES CẦN DÙNG -->
+    <section>
+        <div class="section-header">
+            <div class="section-num">2</div>
+            <h2>Danh Mục Dịch Vụ AWS Cần Sử Dụng (AWS Tech Stack)</h2>
+        </div>
+        <div class="grid-3">
+            <div class="card">
+                <h3>AWS Lambda <span class="tag tag-aws">Compute</span></h3>
+                <p>Xử lý toàn bộ logic Serverless (Python 3.12) thông qua 4 hàm chuyên biệt:</p>
+                <ul>
+                    <li><code>travel-sheet-sync-fn</code>: Đọc Google Sheets, so sánh hash diff, validate dữ liệu và cập nhật DynamoDB.</li>
+                    <li><code>travel-slack-interactive-fn</code>: Xử lý Slash Command, hiển thị/nhận dữ liệu từ Slack Modal.</li>
+                    <li><code>travel-reminder-24h-fn</code>: Quét chuyến bay trước 24h, gọi AI tạo nội dung và bắn thông báo.</li>
+                    <li><code>travel-ai-agent-fn</code>: Xử lý hội thoại tự nhiên, tạo Purchase Request (PR) và OCR ảnh vé.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Amazon DynamoDB <span class="tag tag-aws">Database</span></h3>
+                <p>Cơ sở dữ liệu NoSQL lưu trữ dữ liệu chuyến đi đã đồng bộ từ Google Sheets:</p>
+                <ul>
+                    <li><strong>Table <code>TravelBookings</code>:</strong> Partition Key <code>trip_id</code>, lưu thông tin chuyến bay, <code>row_hash</code> (để kiểm tra diff nhanh) và cờ <code>reminder_sent</code>.</li>
+                    <li><strong>GSI <code>DepartureTimeIndex</code>:</strong> Hỗ trợ truy vấn nhanh các chuyến bay sắp khởi hành trong vòng 24h.</li>
+                    <li><strong>Table <code>PurchaseRequests</code>:</strong> Lưu lịch sử yêu cầu tạo PR từ cuộc hội thoại với Slack Agent.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Amazon EventBridge <span class="tag tag-aws">Orchestration</span></h3>
+                <p>Quản lý các tác vụ chạy tự động theo lịch (Cronjob & Scheduler):</p>
+                <ul>
+                    <li><strong>Daily Sync Rule:</strong> Chạy cố định mỗi ngày (VD: 08:00 sáng) để kích hoạt Lambda kiểm tra diff từ Google Sheets và gửi báo cáo lỗi vào Slack Channel của Admin.</li>
+                    <li><strong>Reminder Check Rule:</strong> Chạy định kỳ mỗi 15-30 phút (hoặc dùng EventBridge Scheduler hẹn giờ chính xác cho từng chuyến bay) để kích hoạt thông báo trước 24h.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Amazon Bedrock <span class="tag tag-ai">Generative AI</span></h3>
+                <p>Trái tim AI của hệ thống, sử dụng mô hình <strong>Claude 3.5 Sonnet</strong> (hoặc Amazon Nova Pro):</p>
+                <ul>
+                    <li><strong>Multimodal Vision (OCR):</strong> Đọc ảnh chụp vé máy bay/boarding pass hoặc e-ticket PDF do người dùng tải lên Slack để bóc tách PNR, Số hiệu chuyến bay, Ngày giờ, Sân bay đi/đến.</li>
+                    <li><strong>IATA Travel Content Generator:</strong> Dựa vào mã IATA sân bay đáp (VD: NRT, SIN, HAN, SFO) sinh danh sách đồ cần mang theo, đặc sản, chỗ vui chơi, danh lam thắng cảnh.</li>
+                    <li><strong>Conversational Agent:</strong> Hiểu ý định người dùng khi chat để thu thập thông tin tạo Purchase Request.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Amazon API Gateway <span class="tag tag-aws">Networking</span></h3>
+                <p>Cổng giao tiếp HTTP API kết nối Slack Platform với AWS Lambda:</p>
+                <ul>
+                    <li>Endpoint <code>POST /slack/events</code>: Nhận sự kiện tin nhắn, file ảnh vé máy bay và tương tác với AI Agent.</li>
+                    <li>Endpoint <code>POST /slack/interactions</code>: Nhận payload từ Slash Command và khi Admin submit Interactive Modal.</li>
+                    <li>Tích hợp cơ chế trả lời HTTP 200 OK trong vòng &lt; 3 giây theo yêu cầu của Slack (kết hợp Lambda Async Invoke).</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Amazon SES & Supporting Services <span class="tag tag-aws">Email & Security</span></h3>
+                <p>Các dịch vụ bổ trợ hoàn thiện hạ tầng sản phẩm:</p>
+                <ul>
+                    <li><strong>Amazon SES (Simple Email Service):</strong> Gửi email HTML chuyên nghiệp chứa thông tin chuyến bay, checklist hành lý và gợi ý điểm đến trước 24h.</li>
+                    <li><strong>AWS Secrets Manager:</strong> Bảo mật file JSON <code>Google Service Account</code>, <code>Slack Bot Token</code> và <code>Signing Secret</code>.</li>
+                    <li><strong>Amazon S3:</strong> Lưu trữ tạm thời file ảnh vé máy bay tải về từ Slack để phục vụ kiểm toán.</li>
+                    <li><strong>Amazon CloudWatch:</strong> Lưu log thực thi và cảnh báo khi job sync lỗi.</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION 3: ỨNG DỤNG, TÍCH HỢP & HẠ TẦNG NGOÀI AWS -->
+    <section>
+        <div class="section-header">
+            <div class="section-num">3</div>
+            <h2>Ứng Dụng, Quyền Tích Hợp & Hạ Tầng Cần Chuẩn Bị (Apps & Infra)</h2>
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <h3>1. Google Cloud & Google Sheets Setup <span class="tag tag-gcp">Google Workspace</span></h3>
+                <p>Để Slack Bot và AWS Lambda đọc/ghi trực tiếp vào file Google Sheets của Biz Admin:</p>
+                <ul>
+                    <li>Tạo Project trên <strong>Google Cloud Console</strong>, bật 2 API: <strong>Google Sheets API</strong> và <strong>Google Drive API</strong>.</li>
+                    <li>Tạo <strong>Google Service Account</strong>, xuất khóa định dạng JSON và lưu vào AWS Secrets Manager.</li>
+                    <li>Mở file Google Sheets quản lý chuyến đi, cấp quyền <strong>Editor</strong> cho địa chỉ email của Service Account (<code>...@....iam.gserviceaccount.com</code>).</li>
+                    <li>Sử dụng thư viện Python <code>gspread</code> hoặc <code>google-api-python-client</code> trên Lambda Layer.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>2. Cấu Hình Slack App (Bot, Modal & Agent) <span class="tag tag-slack">Slack Platform</span></h3>
+                <p>Khởi tạo ứng dụng tại <code>api.slack.com/apps</code> với đầy đủ tính năng giao diện:</p>
+                <ul>
+                    <li><strong>Slash Commands:</strong> <code>/travel-manage</code> (mở Modal thêm/sửa chuyến đi, chạy test sync thủ công).</li>
+                    <li><strong>Interactivity & Shortcuts:</strong> Bật để xử lý sự kiện bấm nút, chọn dropdown và submit Modal.</li>
+                    <li><strong>Agents & Assistants View:</strong> Bật chế độ AI App/Split-view để người dùng chat tạo PR hoặc thả ảnh vé máy bay.</li>
+                    <li><strong>Bot Token Scopes cần cấp:</strong> <code>chat:write</code>, <code>im:write</code>, <code>commands</code>, <code>files:read</code>, <code>channels:read</code>, <code>users:read</code>, <code>users:read.email</code>, <code>assistant:write</code>.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>3. Bộ Công Cụ Phát Triển & IaC <span class="tag tag-infra">DevOps & SDK</span></h3>
+                <p>Đảm bảo triển khai nhanh trong 5 ngày, dễ dàng quản lý môi trường Test/Prod:</p>
+                <ul>
+                    <li><strong>IaC Framework:</strong> Sử dụng <strong>AWS SAM (Serverless Application Model)</strong> hoặc <strong>Serverless Framework</strong> để định nghĩa toàn bộ tài nguyên trong 1 file <code>template.yaml</code>.</li>
+                    <li><strong>Core Python Libraries:</strong>
+                        <ul>
+                            <li><code>slack-bolt</code>: Framework chuẩn xử lý Modal, Slash Command, Events.</li>
+                            <li><code>pydantic</code>: Kiểm tra chặt chẽ định dạng ngày giờ, mã IATA, email, số tiền cho mục đích kiểm toán.</li>
+                            <li><code>boto3</code>: Tương tác DynamoDB, Bedrock, SES, Secrets Manager.</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>4. Chuẩn Hóa Schema & Quy Tắc Kiểm Toán <span class="tag tag-infra">Data Governance</span></h3>
+                <p>Các trường bắt buộc kiểm tra khi chạy Daily Sync và nhập từ Slack Modal/AI:</p>
+                <ul>
+                    <li><code>Trip_ID</code> (Unique ID), <code>Passenger_Name</code>, <code>Passenger_Email</code>, <code>Slack_User_ID</code>.</li>
+                    <li><code>Flight_Code</code> (Regex: <code>^[A-Z0-9]{2}\d{1,4}$</code>, VD: VN214, VJ123).</li>
+                    <li><code>Departure_IATA</code> & <code>Arrival_IATA</code> (3 ký tự in hoa chuẩn IATA: SGN, HAN, NRT, SIN...).</li>
+                    <li><code>Departure_Time</code> (ISO 8601: <code>YYYY-MM-DD HH:mm</code> kèm Timezone).</li>
+                    <li><code>PR_Number</code>, <code>Cost_Amount</code> (Số dương), <code>Audit_Status</code> (<code>VALID</code> / <code>MISSING_FIELD</code> / <code>INVALID_FORMAT</code>).</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION 4: CHIẾN LƯỢC BUILD TRONG 5 NGÀY -->
+    <section>
+        <div class="section-header">
+            <div class="section-num">4</div>
+            <h2>Chiến Lược Thực Thi Dự Án Trong 5 Ngày (5-Day Execution Roadmap)</h2>
+        </div>
+
+        <div class="timeline">
+            <!-- NGÀY 1 -->
+            <div class="day-card day-1">
+                <div class="day-header">
+                    <div class="day-title">NGÀY 1: Thiết Lập Hạ Tầng, Google Sheets Sync & Báo Cáo Kiểm Toán</div>
+                    <div class="day-focus">Giải quyết hạng mục: #1, #2, #3, #6</div>
+                </div>
+                <div class="day-body">
+                    <div class="task-list">
+                        <h4>Công việc chi tiết trong ngày</h4>
+                        <ul>
+                            <li>Khởi tạo Google Service Account, cấp quyền vào file Google Sheets mẫu và lưu thông tin xác thực lên AWS Secrets Manager.</li>
+                            <li>Dựng hạ tầng cơ bản bằng AWS SAM: Tạo bảng DynamoDB <code>TravelBookings</code> và hàm Lambda <code>travel-sheet-sync-fn</code>.</li>
+                            <li>Viết thuật toán băm từng dòng (MD5/SHA256 <code>row_hash</code>) để so sánh diff: Chỉ cập nhật vào DynamoDB những dòng mới thêm hoặc có thay đổi trên Google Sheets.</li>
+                            <li>Xây dựng bộ Validator bằng <code>Pydantic</code> kiểm tra các trường bị trống (missing fields) hoặc sai format (ngày giờ, mã IATA, giá tiền).</li>
+                            <li>Tạo EventBridge Rule chạy hằng ngày và cấu hình Webhook gửi báo cáo danh sách các dòng lỗi (kèm số thứ tự dòng trên Sheet) vào Slack Channel của Biz Admin.</li>
+                        </ul>
+                    </div>
+                    <div class="deliverable-box">
+                        <h4>Kết quả bàn giao cuối Ngày 1</h4>
+                        <ul>
+                            <li>Pipeline đồng bộ Google Sheets → DynamoDB hoạt động ổn định.</li>
+                            <li>Cơ chế Check Diff thông minh (không ghi đè dư thừa).</li>
+                            <li>Báo cáo lỗi dữ liệu tự động đổ về Slack Channel mỗi ngày.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NGÀY 2 -->
+            <div class="day-card day-2">
+                <div class="day-header">
+                    <div class="day-title">NGÀY 2: Xây Dựng Slack Bot, Slash Command & Interactive Modal Cho Admin</div>
+                    <div class="day-focus">Giải quyết hạng mục: #7</div>
+                </div>
+                <div class="day-body">
+                    <div class="task-list">
+                        <h4>Công việc chi tiết trong ngày</h4>
+                        <ul>
+                            <li>Tạo Slack App, cấu hình OAuth Scopes, Slash Commands (<code>/travel-admin</code>) kết nối qua API Gateway vào Lambda <code>travel-slack-interactive-fn</code>.</li>
+                            <li>Thiết kế giao diện <strong>Slack Interactive Modal</strong> (Block Kit) cho phép Admin: (1) Thêm mới chuyến bay, (2) Chọn chuyến bay hiện có để sửa thông tin, (3) Bấm nút kích hoạt "Test Sync & Reminder" ngay lập tức.</li>
+                            <li>Tích hợp kiểm tra định dạng ngay trên form Modal (Datepicker cho ngày bay, Dropdown/Regex cho mã sân bay IATA) để chặn lỗi nhập sai từ đầu.</li>
+                            <li>Khi Admin bấm Submit trên Modal: Ghi trực tiếp vào đúng dòng trên Google Sheets đồng thời cập nhật ngay vào DynamoDB.</li>
+                        </ul>
+                    </div>
+                    <div class="deliverable-box">
+                        <h4>Kết quả bàn giao cuối Ngày 2</h4>
+                        <ul>
+                            <li>Admin thêm/sửa chuyến đi ngay trong Slack không cần mở Google Sheets.</li>
+                            <li>Tính năng Test/Automate chạy thử ngay trên Modal hoạt động mượt mà.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NGÀY 3 -->
+            <div class="day-card day-3">
+                <div class="day-header">
+                    <div class="day-title">NGÀY 3: Hệ Thống Nhắc Lịch 24h (Email & Slack DM) + AI IATA Travel Guide</div>
+                    <div class="day-focus">Giải quyết hạng mục: #4, #5</div>
+                </div>
+                <div class="day-body">
+                    <div class="task-list">
+                        <h4>Công việc chi tiết trong ngày</h4>
+                        <ul>
+                            <li>Cấu hình Amazon SES (xác thực domain/email gửi) và thiết kế mẫu HTML Email thông báo chuyến bay chuyên nghiệp.</li>
+                            <li>Xây dựng module tích hợp <strong>Amazon Bedrock (Claude 3.5 Sonnet)</strong>: Nhận đầu vào là mã IATA điểm đáp, ngày bay và thời gian lưu trú để sinh tự động:
+                                <br>• Danh sách vật dụng cần mang theo (hộ chiếu, visa, ổ cắm chuyển đổi, trang phục theo thời tiết).
+                                <br>• Cẩm nang đặc sản địa phương, địa điểm vui chơi và danh lam thắng cảnh nổi bật tại điểm đáp.</li>
+                            <li>Viết Lambda <code>travel-reminder-24h-fn</code> kết hợp EventBridge: Quét các chuyến bay có giờ khởi hành trong 24h tới (mà <code>reminder_sent = False</code>), gửi đồng thời Email qua SES và nhắn tin trực tiếp (DM) qua Slack Bot cho người bay, sau đó đánh dấu <code>reminder_sent = True</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="deliverable-box">
+                        <h4>Kết quả bàn giao cuối Ngày 3</h4>
+                        <ul>
+                            <li>Tự động bắn Email + Slack DM đúng 24h trước giờ bay.</li>
+                            <li>Nội dung AI sinh theo mã sân bay IATA cá nhân hóa, trình bày đẹp mắt.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NGÀY 4 -->
+            <div class="day-card day-4">
+                <div class="day-header">
+                    <div class="day-title">NGÀY 4: Xây Dựng Slack AI Agent, Tạo Purchase Request & Đọc Ảnh Vé Máy Bay</div>
+                    <div class="day-focus">Giải quyết hạng mục: #8</div>
+                </div>
+                <div class="day-body">
+                    <div class="task-list">
+                        <h4>Công việc chi tiết trong ngày</h4>
+                        <ul>
+                            <li>Kích hoạt tính năng <strong>Agent / Assistant</strong> cho Slack Bot, lắng nghe sự kiện tin nhắn trực tiếp (<code>message.im</code>) và tải file (<code>file_shared</code>).</li>
+                            <li>Xây dựng luồng <strong>Multimodal Ticket OCR</strong>: Khi người dùng tải ảnh chụp hoặc PDF vé máy bay lên Slack, Lambda tải file qua Slack Token, đưa vào <strong>Amazon Bedrock Vision</strong> để bóc tách cấu trúc JSON (Họ tên, Hãng bay, Mã chuyến bay, PNR, IATA đi/đến, Ngày giờ bay, Giá vé).</li>
+                            <li>Xây dựng luồng hội thoại <strong>Tạo Purchase Request (PR)</strong>: Cho phép người dùng chat tự nhiên với Bot để yêu cầu tạo PR cho chuyến công tác; Agent tự động hỏi thêm các trường còn thiếu.</li>
+                            <li>Hiển thị bản tóm tắt kèm nút <strong>"Xác nhận & Lưu"</strong> ngay trong khung chat để tự động ghi thông tin vé/PR vào Google Sheets và DynamoDB.</li>
+                        </ul>
+                    </div>
+                    <div class="deliverable-box">
+                        <h4>Kết quả bàn giao cuối Ngày 4</h4>
+                        <ul>
+                            <li>Bot đọc chính xác thông tin từ ảnh vé máy bay và điền vào hệ thống.</li>
+                            <li>Luồng chat tạo Purchase Request hoạt động trơn tru trên Slack.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NGÀY 5 -->
+            <div class="day-card day-5">
+                <div class="day-header">
+                    <div class="day-title">NGÀY 5: Kiểm Thử Tích Hợp (E2E), Xử Lý Edge Cases & Bàn Giao</div>
+                    <div class="day-focus">Hoàn thiện & Go-Live</div>
+                </div>
+                <div class="day-body">
+                    <div class="task-list">
+                        <h4>Công việc chi tiết trong ngày</h4>
+                        <ul>
+                            <li><strong>Kiểm thử End-to-End (E2E):</strong> Chạy thử toàn bộ kịch bản từ lúc upload ảnh vé / tạo PR → dữ liệu vào Google Sheets & DynamoDB → sửa qua Slash Command Modal → báo cáo lỗi kiểm toán → bắn nhắc lịch 24h.</li>
+                            <li><strong>Xử lý các Edge Cases quan trọng:</strong>
+                                <br>• Xử lý giới hạn timeout 3 giây của Slack bằng bất đồng bộ (Lambda Async Invocation).
+                                <br>• Xử lý lệch múi giờ (Timezone) giữa sân bay đi và sân bay đến khi tính mốc 24h.
+                                <br>• Cơ chế Retry & Rate Limit khi gọi Google Sheets API.</li>
+                            <li>Viết tài liệu hướng dẫn sử dụng nhanh (Quick Guide) cho Biz Admin và chuẩn bị kịch bản Demo trực tiếp cho Sếp.</li>
+                        </ul>
+                    </div>
+                    <div class="deliverable-box">
+                        <h4>Kết quả bàn giao cuối Ngày 5</h4>
+                        <ul>
+                            <li>Hệ thống Production-ready trên AWS & Slack Workspace.</li>
+                            <li>Kịch bản Demo trực quan đầy đủ 8 tính năng cho Sếp và đội Biz Admin.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION 5: BẢNG TỔNG HỢP ĐỐI CHIẾU YÊU CẦU -->
+    <section>
+        <div class="section-header">
+            <div class="section-num">5</div>
+            <h2>Bảng Đối Chiếu 8 Yêu Cầu Nghiệp Vụ Với Giải Pháp Kỹ Thuật</h2>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">#</th>
+                        <th style="width: 32%;">Yêu cầu trong Plan</th>
+                        <th style="width: 33%;">AWS Services & Công nghệ sử dụng</th>
+                        <th>Cách thức triển khai cụ thể</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>1</strong></td>
+                        <td>Dùng Google Service Account để Slack Bot tương tác Google Sheet</td>
+                        <td>GCP Service Account, AWS Secrets Manager, Thư viện <code>gspread</code></td>
+                        <td>Lưu JSON key trên Secrets Manager, cấp quyền Editor vào Sheet cho email của Service Account.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>2</strong></td>
+                        <td>Ingest dữ liệu từ Google Sheets vào DynamoDB qua Lambda</td>
+                        <td>AWS Lambda, Amazon DynamoDB</td>
+                        <td>Lambda đọc toàn bộ rows từ Sheet, chuẩn hóa schema và thực hiện <code>batch_writer</code> vào DynamoDB.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>3</strong></td>
+                        <td>Tạo cronjob EventBridge hằng ngày, kiểm tra diff để update</td>
+                        <td>Amazon EventBridge Scheduler/Rules, AWS Lambda</td>
+                        <td>Tính mã băm <code>row_hash</code> cho mỗi dòng trên Sheet, đối chiếu với <code>row_hash</code> trong DynamoDB để chỉ update dòng thay đổi.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>4</strong></td>
+                        <td>24h trước chuyến bay tự động bắn Email và Slack Bot DM</td>
+                        <td>Amazon EventBridge, AWS Lambda, Amazon SES, Slack WebClient (<code>chat.postMessage</code>)</td>
+                        <td>Quét các chuyến bay sắp cất cánh trong 24h tới, gửi đồng thời HTML Email qua SES và tin nhắn DM qua Slack User ID.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>5</strong></td>
+                        <td>Nội dung gồm thông tin bay, đồ cần mang, AI gợi ý điểm vui chơi/đặc sản từ mã IATA</td>
+                        <td>Amazon Bedrock (Claude 3.5 Sonnet)</td>
+                        <td>Prompt truyền mã IATA điểm đến + thời điểm bay để AI sinh checklist hành lý và cẩm nang ẩm thực, thắng cảnh địa phương.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>6</strong></td>
+                        <td>Kiểm tra thiếu field / sai format khi sync và báo cáo vào Slack channel mỗi ngày</td>
+                        <td>Pydantic Validator, AWS Lambda, Slack Incoming Webhook / Bot</td>
+                        <td>Kiểm tra từng dòng khi sync; tổng hợp danh sách dòng lỗi (số dòng, tên cột lỗi) gửi vào channel <code>#biz-admin-alerts</code>.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>7</strong></td>
+                        <td>Interactive Modal + Slash Command để Admin sửa thẳng Google Sheet, test & automate</td>
+                        <td>Slack Block Kit Modal, API Gateway, AWS Lambda</td>
+                        <td>Lệnh <code>/travel-admin</code> bật Modal cho phép thêm/sửa dòng trực tiếp và có nút bấm kích hoạt chạy thử luồng Sync/Reminder.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>8</strong></td>
+                        <td>Slack Bot Agent để user chat tạo Purchase Request hoặc upload ảnh vé máy bay tự điền field</td>
+                        <td>Slack AI Agent View, Amazon Bedrock Vision (Multimodal), Amazon S3</td>
+                        <td>Nhận ảnh vé từ Slack, gọi Bedrock Vision bóc tách các trường thông tin chuyến bay hoặc hội thoại thu thập thông tin PR rồi điền vào Sheet.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<footer>
+    <p>Tài liệu Kế hoạch Triển khai Dự án <strong>Travel Tracker</strong> — Thiết kế trên nền tảng AWS Serverless, Amazon Bedrock & Slack Platform.</p>
+</footer>
+
+</body>
+</html>

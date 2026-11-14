@@ -1,0 +1,35 @@
+# ==============================================================================
+# SMART TRAVEL ASSISTANT - TERRAFORM CONFIGURATION VARIABLES (PRODUCTION)
+# ==============================================================================
+
+aws_region   = "ap-southeast-1"
+environment  = "prod"
+project_name = "smart-travel-assistant"
+
+# DynamoDB Configuration
+dynamodb_table_name = "TravelBookings"
+
+# Slack Integration Credentials
+slack_bot_token         = "xoxb-your-slack-bot-token"
+slack_signing_secret    = "your-slack-signing-secret"
+slack_admin_channel_id  = "C0CGLFPNW7R"
+
+# Google Sheets Configuration
+google_sheet_id         = "1bdDs54cT0lADf29fp9HM2D0V5cfleJFj_UmjOnO1im0"
+google_sheet_tab_name   = "Lịch_Trình_Công_Tác"
+
+# Paste entire content of credentials/google-service-account.json or base64 encoded string
+google_service_account_json = <<EOF
+{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "travel-assistant@your-project-id.iam.gserviceaccount.com"
+}
+EOF
+
+# OpenRouter AI Configuration
+openrouter_api_key = "sk-or-v1-your-openrouter-key"
+ai_model           = "@preset/free-model-stack"
+

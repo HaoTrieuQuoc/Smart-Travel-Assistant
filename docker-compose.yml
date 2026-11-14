@@ -1,0 +1,7 @@
+services:
+  dynamodb-local:
+    container_name: smart-travel-dynamodb
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "127.0.0.1:4566:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
