@@ -5,7 +5,7 @@ const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, DeleteCommand, QueryCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 
 // Initialize AWS DynamoDB Document Client
 const ddbClient = new DynamoDBClient({
@@ -174,6 +174,8 @@ async function postSlackMessage(channel, textOrBlocks) {
 module.exports = {
   docClient,
   PutCommand,
+  GetCommand,
+  DeleteCommand,
   QueryCommand,
   UpdateCommand,
   ScanCommand,
