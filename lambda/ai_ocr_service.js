@@ -98,7 +98,9 @@ Hãy trích xuất thông tin từ ảnh vé máy bay/boarding pass này và tr�
         ]
       }
     ],
-    temperature: 0.1
+    reasoning: { effort: 'none' },
+    temperature: 0.1,
+    max_tokens: 1000
   };
 
   const raw = await callOpenRouter(payload);

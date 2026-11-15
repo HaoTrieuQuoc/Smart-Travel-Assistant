@@ -14,7 +14,7 @@ resource "aws_lambda_function" "slack_handler" {
   handler          = "slack_handler.handler"
   runtime          = "nodejs20.x"
   memory_size      = 256
-  timeout          = 30
+  timeout          = 60
 
   environment {
     variables = {

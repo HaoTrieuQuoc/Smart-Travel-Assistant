@@ -98,7 +98,8 @@ BẮT BUỘC chỉ trả về 1 chuỗi JSON thuần túy (không kèm giải th
       }
     ],
     temperature: 0.1,
-    max_tokens: 800
+    reasoning: { effort: 'none' },
+    max_tokens: 1000
   };
 
   const res = await postJson('https://openrouter.ai/api/v1/chat/completions', {

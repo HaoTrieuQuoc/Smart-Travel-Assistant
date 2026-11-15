@@ -130,7 +130,8 @@ async function handleSlackEvent(event) {
     await postSlackMessage(channelId, "🔍 *AI đang đọc và bóc tách thông tin từ vé máy bay của Sếp... Vui lòng chờ 3-5 giây nhé!*");
 
     try {
-      const base64Data = await downloadSlackFile(file.url_private_download);
+      const downloadUrl = file.url_private_download || file.url_private;
+      const base64Data = await downloadSlackFile(downloadUrl);
       const ticketInfo = await extractTicketFromBase64(base64Data, file.mimetype);
 
       const previewCard = {
