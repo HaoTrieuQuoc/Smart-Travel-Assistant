@@ -136,6 +136,16 @@ function downloadSlackFile(urlStr) {
   });
 }
 
+// Get detailed info for a Slack file
+async function getSlackFileInfo(fileId) {
+  const slackToken = process.env.SLACK_BOT_TOKEN;
+  const res = await makeRequest(`https://slack.com/api/files.info?file=${fileId}`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${slackToken}` }
+  });
+  return res.data?.file || null;
+}
+
 // Post Slack Message
 async function postSlackMessage(channel, textOrBlocks) {
   const slackToken = process.env.SLACK_BOT_TOKEN;
@@ -170,6 +180,7 @@ module.exports = {
   makeRequest,
   getGoogleAccessToken,
   downloadSlackFile,
+  getSlackFileInfo,
   postSlackMessage
 };
 

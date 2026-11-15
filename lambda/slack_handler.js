@@ -10,6 +10,7 @@ const {
   makeRequest,
   getGoogleAccessToken,
   downloadSlackFile,
+  getSlackFileInfo,
   postSlackMessage
 } = require('./common');
 
@@ -122,20 +123,56 @@ async function handleSlackEvent(event) {
 
   const channelId = event.channel;
   const userText = (event.text || '').replace(/<@[A-Z0-9]+>/g, '').trim();
-  const files = event.files || [];
+  const threadTs = event.thread_ts || event.ts;
 
-  // Case 1: Upload Air Ticket Image -> OCR
-  if (files.length > 0 && files[0].mimetype && files[0].mimetype.startsWith('image/')) {
-    const file = files[0];
-    await postSlackMessage(channelId, "🔍 *AI đang đọc và bóc tách thông tin từ vé máy bay của Sếp... Vui lòng chờ 3-5 giây nhé!*");
+  // 1. Thu thập tất cả các file đính kèm từ mọi thuộc tính có thể có
+  let rawFiles = [];
+  if (Array.isArray(event.files)) {
+    rawFiles = event.files;
+  } else if (event.file) {
+    rawFiles = [event.file];
+  }
+
+  // Lọc các file ảnh (png, jpg, jpeg, webp, bmp, heic)
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.heic'];
+  const isImageFile = (f) => {
+    if (f.mimetype && f.mimetype.startsWith('image/')) return true;
+    if (f.filetype && ['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(String(f.filetype).toLowerCase())) return true;
+    if (f.name && imageExtensions.some(ext => String(f.name).toLowerCase().endsWith(ext))) return true;
+    return false;
+  };
+
+  const imageFiles = rawFiles.filter(isImageFile);
+
+  // Case 1: Có ảnh vé máy bay đính kèm -> Phản hồi tức thì & Quét OCR
+  if (imageFiles.length > 0) {
+    let file = imageFiles[0];
+
+    // PHẢN HỒI NGAY LẬP TỨC (< 200ms) CHO USER BIẾT BOT ĐÃ NHẬN ẢNH VÀ ĐANG QUÉT
+    await postSlackMessage(channelId, {
+      channel: channelId,
+      thread_ts: threadTs,
+      text: "🤖 *Chào Sếp! Em đã nhận được ảnh vé máy bay rồi ạ.*\n⏳ *AI Vision đang quét và trích xuất dữ liệu hành trình trong 2-3 giây, Sếp đợi em một chút nhé!*"
+    });
 
     try {
+      // Nếu file chưa có URL tải thì gọi Slack API lấy chi tiết
+      if (!file.url_private_download && !file.url_private && file.id) {
+        const fullFileInfo = await getSlackFileInfo(file.id);
+        if (fullFileInfo) file = fullFileInfo;
+      }
+
       const downloadUrl = file.url_private_download || file.url_private;
+      if (!downloadUrl) {
+        throw new Error('Không lấy được liên kết tải ảnh từ Slack');
+      }
+
       const base64Data = await downloadSlackFile(downloadUrl);
-      const ticketInfo = await extractTicketFromBase64(base64Data, file.mimetype);
+      const ticketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
 
       const previewCard = {
         channel: channelId,
+        thread_ts: threadTs,
         blocks: [
           {
             type: "header",
@@ -152,10 +189,10 @@ async function handleSlackEvent(event) {
               { type: "mrkdwn", text: `*Hãng hàng không:*\n${ticketInfo.airline || 'Vietnam Airlines'}` },
               { type: "mrkdwn", text: `*Số hiệu chuyến bay:*\n✈️ \`${ticketInfo.flight_number || 'N/A'}\`` },
               { type: "mrkdwn", text: `*Mã đặt chỗ (PNR):*\n🎫 \`${ticketInfo.pnr || 'N/A'}\`` },
-              { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_iata} ➔ *${ticketInfo.arrival_iata}* (${ticketInfo.arrival_city || ''})` },
+              { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_iata || 'HAN'} ➔ *${ticketInfo.arrival_iata || 'SGN'}* (${ticketInfo.arrival_city || ''})` },
               { type: "mrkdwn", text: `*Giờ cất cánh:*\n🕒 *${ticketInfo.departure_time || 'N/A'}*` },
               { type: "mrkdwn", text: `*Hạng vé:*\n${ticketInfo.ticket_class || 'Economy'}` },
-              { type: "mrkdwn", text: `*Giá vé:*\n${ticketInfo.ticket_price ? Number(ticketInfo.ticket_price).toLocaleString('vi-VN') + ' VND' : 'Đã xuất vé'}` }
+              { type: "mrkdwn", text: `*Giá vé:*\n${ticketInfo.ticket_price && ticketInfo.ticket_price !== '0' ? Number(ticketInfo.ticket_price).toLocaleString('vi-VN') + ' VND' : 'Đã xuất vé (Boarding Pass)'}` }
             ]
           },
           {
@@ -181,17 +218,35 @@ async function handleSlackEvent(event) {
 
       await postSlackMessage(channelId, previewCard);
     } catch (err) {
-      await postSlackMessage(channelId, `⚠️ *Không thể đọc được ảnh vé này:* ${err.message}. Sếp vui lòng thử lại với ảnh rõ nét hơn nhé!`);
+      console.error('OCR Error:', err);
+      await postSlackMessage(channelId, {
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `⚠️ *Không thể đọc được ảnh vé này:* ${err.message}. Sếp vui lòng thử lại với ảnh rõ nét hơn nhé!`
+      });
     }
     return;
   }
 
-  // Case 2: Natural Language PR Chat
+  // Case 2: Người dùng tag bot nói về vé nhưng chưa đính kèm ảnh
+  const isTicketIntent = /(vé|ticket|boarding|pass|thêm vé|add vé|ảnh vé|scan|ocr|quét|lịch trình)/i.test(userText);
+  if (isTicketIntent && imageFiles.length === 0) {
+    await postSlackMessage(channelId, {
+      channel: channelId,
+      thread_ts: threadTs,
+      text: "🤖 *Chào Sếp! Em đã nhận được yêu cầu thêm thông tin vé máy bay của Sếp.*\n📎 *Tuy nhiên em chưa thấy file ảnh vé hoặc thẻ lên máy bay đính kèm.* Sếp vui lòng đính kèm ảnh vé máy bay (ảnh e-ticket/boarding pass) vào tin nhắn và gửi lại để em quét tự động nhé!\n*(Hoặc Sếp có thể gõ lệnh `/travel-admin` để mở form điền thông tin trực tiếp)*"
+    });
+    return;
+  }
+
+  // Case 3: Natural Language PR Chat (Xin duyệt công tác)
   if (userText.length > 0) {
     try {
       const prData = await parsePurchaseRequestChat(userText);
       if (prData.is_pr_request) {
         await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
           blocks: [
             {
               type: "header",
@@ -224,9 +279,19 @@ async function handleSlackEvent(event) {
             }
           ]
         });
+        return;
       }
     } catch (err) {
       console.log('Not a PR request:', err.message);
+    }
+
+    // Fallback: Nếu tag bot với câu chào hỏi chung chung
+    if (event.type === 'app_mention') {
+      await postSlackMessage(channelId, {
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "👋 *Chào Sếp! Em là Smart Travel Assistant - Trợ lý Quản lý Công tác Thông minh.*\n\nSếp có thể giao việc cho em bằng các cách sau:\n1. 📸 *Kéo thả ảnh vé máy bay/boarding pass vào đây kèm tag tên em:* Em sẽ tự động bóc tách thông tin và lưu vào Google Sheets.\n2. 📝 *Gõ lệnh `/travel-admin`:* Mở form đặt lịch công tác chuẩn 9 trường dữ liệu.\n3. 💬 *Nhắn tin tự nhiên xin đi công tác (VD:* `Tạo giúp anh PR đi Hà Nội ngày 20/11 ngân sách 15tr`*):* Em sẽ soạn sẵn phiếu trình duyệt gửi Sếp Tổng/CFO!"
+      });
     }
   }
 }
