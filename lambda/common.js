@@ -146,6 +146,33 @@ async function getSlackFileInfo(fileId) {
   return res.data?.file || null;
 }
 
+// Get recent files uploaded in a Slack channel
+async function getRecentChannelFiles(channelId, userId = null) {
+  const slackToken = process.env.SLACK_BOT_TOKEN;
+  const res = await makeRequest(`https://slack.com/api/files.list?channel=${encodeURIComponent(channelId)}&count=5`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${slackToken}` }
+  });
+
+  if (res.data && res.data.ok && Array.isArray(res.data.files)) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    // Ưu tiên file ảnh tải lên trong vòng 5 phút gần nhất
+    const recent = res.data.files.filter(f => {
+      const fileTime = f.created || f.timestamp || 0;
+      const age = Math.abs(nowSec - fileTime);
+      const isUser = !userId || f.user === userId;
+      return age < 300 && isUser;
+    });
+
+    if (recent.length > 0) return recent;
+    // Fallback: nếu đồng hồ máy chủ chênh lệch nhẹ, lấy file mới nhất trong channel nếu có
+    if (res.data.files.length > 0) {
+      return [res.data.files[0]];
+    }
+  }
+  return [];
+}
+
 // Post Slack Message
 async function postSlackMessage(channel, textOrBlocks) {
   const slackToken = process.env.SLACK_BOT_TOKEN;
@@ -183,6 +210,7 @@ module.exports = {
   getGoogleAccessToken,
   downloadSlackFile,
   getSlackFileInfo,
+  getRecentChannelFiles,
   postSlackMessage
 };
 

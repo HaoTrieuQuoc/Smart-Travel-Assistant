@@ -21,6 +21,7 @@ const {
   getGoogleAccessToken,
   downloadSlackFile,
   getSlackFileInfo,
+  getRecentChannelFiles,
   postSlackMessage
 } = require('./common');
 
@@ -301,6 +302,19 @@ async function handleSlackEvent(event) {
     rawFiles = event.files;
   } else if (event.file) {
     rawFiles = [event.file];
+  }
+
+  // Slack API không gửi kèm `files` trong payload `app_mention`!
+  // Do đó, nếu rawFiles rỗng, ta chủ động lấy file ảnh vừa tải lên trong channel
+  if (rawFiles.length === 0 && channelId) {
+    try {
+      const recent = await getRecentChannelFiles(channelId, event.user);
+      if (recent && recent.length > 0) {
+        rawFiles = recent;
+      }
+    } catch (e) {
+      console.error('Error fetching recent files:', e);
+    }
   }
 
   const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.heic'];
@@ -584,7 +598,17 @@ async function handleSlackEvent(event) {
         thread_ts: threadTs,
         text: "👋 *Chào Sếp! Em là Smart Travel Assistant - Trợ lý Quản lý Công tác Thông minh.*\n\nSếp có thể giao việc cho em bằng các cách sau:\n1. 📸 *Kéo thả ảnh vé máy bay/boarding pass vào đây kèm tag tên em:* Em sẽ tự động bóc tách thông tin, cho phép Sếp chỉnh sửa qua chat và lưu vào Google Sheets.\n2. ✏️ *Sửa thông tin lịch trình đã lưu:* Nhắn tin trực tiếp (VD: `Sửa giờ bay của TRIP-202611-824 thành 16:30`).\n3. 📝 *Gõ lệnh `/travel-admin`:* Mở form đặt lịch công tác chuẩn 9 trường dữ liệu.\n4. 💬 *Nhắn tin tự nhiên xin đi công tác (VD:* `Tạo giúp anh PR đi Hà Nội ngày 20/11 ngân sách 15tr`*):* Em sẽ soạn sẵn phiếu trình duyệt gửi Sếp Tổng/CFO!"
       });
+      return;
     }
+  }
+
+  // Fallback: Nếu tag bot trống không kèm ảnh hoặc nội dung
+  if (event.type === 'app_mention') {
+    await postSlackMessage(channelId, {
+      channel: channelId,
+      thread_ts: threadTs,
+      text: "👋 *Chào Sếp! Em là Smart Travel Assistant - Trợ lý Quản lý Công tác Thông minh.*\n\nSếp có thể giao việc cho em bằng các cách sau:\n1. 📸 *Kéo thả ảnh vé máy bay/boarding pass vào đây kèm tag tên em:* Em sẽ tự động bóc tách thông tin, cho phép Sếp chỉnh sửa qua chat và lưu vào Google Sheets.\n2. ✏️ *Sửa thông tin lịch trình đã lưu:* Nhắn tin trực tiếp (VD: `Sửa giờ bay của TRIP-202611-824 thành 16:30`).\n3. 📝 *Gõ lệnh `/travel-admin`:* Mở form đặt lịch công tác chuẩn 9 trường dữ liệu.\n4. 💬 *Nhắn tin tự nhiên xin đi công tác (VD:* `Tạo giúp anh PR đi Hà Nội ngày 20/11 ngân sách 15tr`*):* Em sẽ soạn sẵn phiếu trình duyệt gửi Sếp Tổng/CFO!"
+    });
   }
 }
 
