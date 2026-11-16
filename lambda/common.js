@@ -6,12 +6,21 @@ const http = require('http');
 const crypto = require('crypto');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, DeleteCommand, QueryCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 
-// Initialize AWS DynamoDB Document Client
-const ddbClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || 'ap-southeast-2'
-});
+// Initialize AWS Clients
+const region = process.env.AWS_REGION || 'ap-southeast-2';
+const ddbClient = new DynamoDBClient({ region });
 const docClient = DynamoDBDocumentClient.from(ddbClient);
+const lambdaClient = new LambdaClient({ region });
+
+async function invokeLambdaAsync(functionName, payload) {
+  return lambdaClient.send(new InvokeCommand({
+    FunctionName: functionName,
+    InvocationType: 'Event',
+    Payload: Buffer.from(JSON.stringify(payload))
+  }));
+}
 
 // Helper: HTTP/HTTPS Request
 function makeRequest(urlStr, options = {}, postData = null) {
@@ -211,6 +220,7 @@ module.exports = {
   downloadSlackFile,
   getSlackFileInfo,
   getRecentChannelFiles,
-  postSlackMessage
+  postSlackMessage,
+  invokeLambdaAsync
 };
 

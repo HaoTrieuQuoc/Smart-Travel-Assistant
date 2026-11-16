@@ -22,7 +22,8 @@ const {
   downloadSlackFile,
   getSlackFileInfo,
   getRecentChannelFiles,
-  postSlackMessage
+  postSlackMessage,
+  invokeLambdaAsync
 } = require('./common');
 
 const DYNAMODB_TABLE = process.env.DYNAMODB_TABLE_NAME || 'TravelBookings';
@@ -614,6 +615,13 @@ async function handleSlackEvent(event) {
 
 // Main Lambda Handler for API Gateway
 exports.handler = async (event, context) => {
+  // A. Nếu đây là async worker (được tự kích hoạt bất đồng bộ để xử lý công việc nặng)
+  if (event.isAsyncWorker && event.slackEvent) {
+    console.log('Running as async worker for Slack event:', event.slackEvent.type);
+    await handleSlackEvent(event.slackEvent);
+    return { statusCode: 200, body: 'OK' };
+  }
+
   const headers = event.headers || {};
   // Nếu Slack gửi retry do HTTP timeout trước đó, trả về 200 ngay để tránh xử lý lặp
   if (headers['x-slack-retry-num'] || headers['X-Slack-Retry-Num']) {
@@ -642,9 +650,19 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // B. Slack Event Callback
+    // B. Slack Event Callback -> Kích hoạt async worker xử lý nền ngay lập tức
     if (payload.type === 'event_callback') {
-      await handleSlackEvent(payload.event);
+      try {
+        const functionName = context.functionName || 'smart-travel-assistant-slack-handler';
+        await invokeLambdaAsync(functionName, {
+          isAsyncWorker: true,
+          slackEvent: payload.event
+        });
+      } catch (err) {
+        console.error('Async invoke error, falling back to direct handling:', err);
+        await handleSlackEvent(payload.event);
+      }
+      // Phản hồi HTTP 200 OK cho Slack ngay lập tức (<100ms) để không bao giờ bị timeout 3s
       return { statusCode: 200, body: 'OK' };
     }
 

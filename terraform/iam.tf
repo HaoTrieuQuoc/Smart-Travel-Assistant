@@ -56,3 +56,25 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
   policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
 }
 
+# Policy for Lambda to invoke itself asynchronously for Slack Events
+resource "aws_iam_policy" "lambda_async_invoke_policy" {
+  name        = "${var.project_name}-async-invoke-policy"
+  description = "Allows Slack handler Lambda to invoke itself asynchronously"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "lambda:InvokeFunction"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_async_invoke" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_async_invoke_policy.arn
+}
+
