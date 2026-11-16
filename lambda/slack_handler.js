@@ -224,12 +224,12 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
 // Xây dựng giao diện thẻ xem trước kết quả bóc tách vé máy bay (Ticket Preview Card)
 function buildTicketPreviewCard(channelId, threadTs, ticketInfo, isUpdated = false) {
   const title = isUpdated
-    ? "✏️ ĐÃ CẬP NHẬT THÔNG TIN VÉ THEO PHẢN HỒI"
-    : "🎫 KẾT QUẢ ĐỌC VÉ MÁY BAY TỰ ĐỘNG";
+    ? "KẾT QUẢ ĐỌC VÉ MÁY BAY (ĐÃ CẬP NHẬT)"
+    : "KẾT QUẢ ĐỌC VÉ MÁY BAY";
 
   const introText = isUpdated
-    ? "Dạ em đã cập nhật lại các thông tin theo yêu cầu của Sếp. Sếp kiểm tra lại xem đã chuẩn xác chưa nhé:"
-    : "Dạ em đã bóc tách được các thông tin hành trình từ vé máy bay của Sếp như sau:";
+    ? "Thông tin vé máy bay sau khi chỉnh sửa:"
+    : "Thông tin bóc tách từ vé máy bay:";
 
   const priceDisplay = ticketInfo.ticket_price && ticketInfo.ticket_price !== '0'
     ? `${Number(ticketInfo.ticket_price).toLocaleString('vi-VN')} VND`
@@ -241,7 +241,7 @@ function buildTicketPreviewCard(channelId, threadTs, ticketInfo, isUpdated = fal
     blocks: [
       {
         type: "header",
-        text: { type: "plain_text", text: title, emoji: true }
+        text: { type: "plain_text", text: title, emoji: false }
       },
       {
         type: "section",
@@ -250,36 +250,35 @@ function buildTicketPreviewCard(channelId, threadTs, ticketInfo, isUpdated = fal
       {
         type: "section",
         fields: [
-          { type: "mrkdwn", text: `*Hành khách:*\n👤 ${ticketInfo.passenger_name || 'N/A'}` },
-          { type: "mrkdwn", text: `*Hãng hàng không:*\n✈️ ${ticketInfo.airline || 'Vietnam Airlines'}` },
-          { type: "mrkdwn", text: `*Số hiệu chuyến bay:*\n🏷️ \`${ticketInfo.flight_number || 'N/A'}\`` },
-          { type: "mrkdwn", text: `*Mã đặt chỗ (PNR):*\n🎫 \`${ticketInfo.pnr || 'N/A'}\`` },
-          { type: "mrkdwn", text: `*Lộ trình:*\n🛫 ${ticketInfo.departure_iata || 'HAN'} (${ticketInfo.departure_city || ''}) ➔ 🛬 *${ticketInfo.arrival_iata || 'VCA'}* (${ticketInfo.arrival_city || ''})` },
-          { type: "mrkdwn", text: `*Giờ cất cánh:*\n🕒 *${ticketInfo.departure_time || 'N/A'}*` },
-          { type: "mrkdwn", text: `*Hạng vé / Ghế:*\n💺 ${ticketInfo.ticket_class || 'Economy'}${ticketInfo.seat ? ` (Ghế ${ticketInfo.seat})` : ''}` },
-          { type: "mrkdwn", text: `*Chi phí / Số vé:*\n💰 ${priceDisplay}` }
+          { type: "mrkdwn", text: `*Hành khách:*\n${ticketInfo.passenger_name || 'N/A'}` },
+          { type: "mrkdwn", text: `*Hãng hàng không:*\n${ticketInfo.airline || 'Vietnam Airlines'}` },
+          { type: "mrkdwn", text: `*Số hiệu chuyến bay:*\n${ticketInfo.flight_number || 'N/A'}` },
+          { type: "mrkdwn", text: `*Mã đặt chỗ (PNR):*\n${ticketInfo.pnr || 'N/A'}` },
+          { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_iata || 'HAN'}${ticketInfo.departure_city ? ` (${ticketInfo.departure_city})` : ''} ➔ ${ticketInfo.arrival_iata || 'VCA'}${ticketInfo.arrival_city ? ` (${ticketInfo.arrival_city})` : ''}` },
+          { type: "mrkdwn", text: `*Giờ cất cánh:*\n${ticketInfo.departure_time || 'N/A'}` },
+          { type: "mrkdwn", text: `*Hạng vé / Ghế:*\n${ticketInfo.ticket_class || 'Economy'}${ticketInfo.seat ? ` (Ghế ${ticketInfo.seat})` : ''}` },
+          { type: "mrkdwn", text: `*Chi phí / Số vé:*\n${priceDisplay}` }
         ]
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "💬 *Thông tin này đã chính xác chưa Sếp ơi?*\n• *Nếu đã đúng:* Sếp bấm *[✅ Xác Nhận & Lưu Vào Sheet]* để em lưu chính thức vào lịch trình nhé.\n• *Nếu cần sửa:* Sếp cứ nhắn trực tiếp vào đây (VD: _\"Đổi tên thành Lê Đăng Hiếu\"_, _\"Sửa giờ bay thành 15:30\"_, _\"Mã PNR là ABC123\"_, _\"Giá vé là 1.800.000\"_...) em sẽ cập nhật lại ngay cho Sếp ạ!"
-        }
       },
       {
         type: "actions",
         elements: [
           {
             type: "button",
-            text: { type: "plain_text", text: "✅ Xác Nhận & Lưu Vào Sheet", emoji: true },
+            text: { type: "plain_text", text: "Xác nhận", emoji: false },
             style: "primary",
             action_id: "confirm_save_ticket",
             value: JSON.stringify(ticketInfo)
           },
           {
             type: "button",
-            text: { type: "plain_text", text: "❌ Hủy Bỏ", emoji: true },
+            text: { type: "plain_text", text: "Chỉnh sửa", emoji: false },
+            action_id: "open_edit_ticket_modal",
+            value: JSON.stringify(ticketInfo)
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Hủy bỏ", emoji: false },
             style: "danger",
             action_id: "cancel_ticket"
           }
@@ -334,11 +333,11 @@ async function handleSlackEvent(event) {
   if (imageFiles.length > 0) {
     let file = imageFiles[0];
 
-    // PHẢN HỒI TỰ NHIÊN, NGAY LẬP TỨC (< 200ms)
+    // Phản hồi tức thì không dùng icon AI
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "🤖 *Dạ em đã nhận được ảnh vé máy bay của Sếp rồi ạ!*\n🔍 *Em đang tiến hành đọc thông tin hành trình, Sếp đợi em một chút nhé...*"
+      text: "Đã nhận được ảnh vé máy bay. Đang tiến hành xử lý thông tin..."
     });
 
     try {
@@ -355,7 +354,7 @@ async function handleSlackEvent(event) {
       const base64Data = await downloadSlackFile(downloadUrl);
       const ticketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
 
-      // Lưu bản nháp (Draft) vào DynamoDB để hỗ trợ vòng lặp chỉnh sửa trước khi lưu
+      // Lưu bản nháp (Draft) vào DynamoDB để hỗ trợ chỉnh sửa
       await docClient.send(new PutCommand({
         TableName: DYNAMODB_TABLE,
         Item: {
@@ -367,7 +366,7 @@ async function handleSlackEvent(event) {
         }
       }));
 
-      // Gửi thẻ xem trước kèm câu hỏi xác nhận & các nút hành động
+      // Gửi thẻ xem trước
       const card = buildTicketPreviewCard(channelId, threadTs, ticketInfo, false);
       await postSlackMessage(channelId, card);
     } catch (err) {
@@ -375,7 +374,7 @@ async function handleSlackEvent(event) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: `⚠️ *Không thể đọc được ảnh vé này:* ${err.message}. Sếp vui lòng gửi lại ảnh rõ nét hơn giúp em nhé!`
+        text: `Không thể đọc được ảnh vé này: ${err.message}. Vui lòng gửi lại ảnh rõ nét hơn.`
       });
     }
     return;
@@ -400,7 +399,7 @@ async function handleSlackEvent(event) {
         await postSlackMessage(channelId, {
           channel: channelId,
           thread_ts: threadTs,
-          text: `🤖 *Dạ em đã nhận được yêu cầu sửa chuyến công tác \`${tripId}\`. Em đang tiến hành cập nhật dữ liệu trên Google Sheets & DynamoDB...*`
+          text: `Đang xử lý cập nhật chuyến đi ${tripId}...`
         });
 
         const editAnalysis = await parseEditSavedTripRequest(userText, existingTripRes.Item);
@@ -430,13 +429,13 @@ async function handleSlackEvent(event) {
             blocks: [
               {
                 type: "header",
-                text: { type: "plain_text", text: "✅ ĐÃ CẬP NHẬT GOOGLE SHEET & DYNAMODB THÀNH CÔNG", emoji: true }
+                text: { type: "plain_text", text: "CẬP NHẬT LỊCH TRÌNH THÀNH CÔNG", emoji: false }
               },
               {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `Dạ em đã cập nhật trực tiếp chuyến \`${tripId}\` trên tab *${TAB_NAME}* và đồng bộ vào hệ thống:\n\n${changedList}\n\n📝 *Chi tiết:* ${editAnalysis.explanation || 'Đã chỉnh sửa theo yêu cầu của Sếp.'}`
+                  text: `Đã cập nhật chuyến \`${tripId}\` trên tab *${TAB_NAME}* và hệ thống:\n\n${changedList}\n\nChi tiết: ${editAnalysis.explanation || 'Đã chỉnh sửa theo yêu cầu.'}`
                 }
               }
             ]
@@ -446,7 +445,7 @@ async function handleSlackEvent(event) {
           await postSlackMessage(channelId, {
             channel: channelId,
             thread_ts: threadTs,
-            text: `⚠️ Em chưa nhận diện rõ trường dữ liệu nào cần sửa cho chuyến \`${tripId}\`. Sếp có thể nhắn rõ hơn ví dụ: _"Sửa giờ bay của ${tripId} thành 16:00"_ hoặc _"Đổi giá vé ${tripId} thành 2.500.000"_ nhé!`
+            text: `Chưa nhận diện rõ trường dữ liệu nào cần sửa cho chuyến \`${tripId}\`. Bạn có thể nhắn rõ hơn, ví dụ: 'Sửa giờ bay của ${tripId} thành 16:00' hoặc 'Đổi giá vé ${tripId} thành 2.500.000'.`
           });
           return;
         }
@@ -456,7 +455,7 @@ async function handleSlackEvent(event) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: `⚠️ *Lỗi khi cập nhật chuyến đi ${tripId}:* ${err.message}`
+        text: `Lỗi khi cập nhật chuyến đi ${tripId}: ${err.message}`
       });
       return;
     }
@@ -489,7 +488,7 @@ async function handleSlackEvent(event) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: "🗑️ *Dạ em đã hủy bản nháp vé máy bay này rồi ạ.* Sếp có thể tải lên ảnh vé mới bất cứ lúc nào nhé!"
+        text: "Đã hủy bản nháp vé máy bay."
       });
       return;
     }
@@ -498,7 +497,7 @@ async function handleSlackEvent(event) {
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "✍️ *Dạ em đang điều chỉnh lại thông tin vé theo yêu cầu của Sếp, đợi em một chút nhé...*"
+      text: "Đang cập nhật lại thông tin vé..."
     });
 
     try {
@@ -516,7 +515,7 @@ async function handleSlackEvent(event) {
         }
       }));
 
-      // Gửi lại thẻ thông tin cập nhật để user xác nhận tiếp (vòng lặp liên tục)
+      // Gửi lại thẻ thông tin cập nhật
       const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicketData, true);
       await postSlackMessage(channelId, updatedCard);
       return;
@@ -525,7 +524,7 @@ async function handleSlackEvent(event) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: `⚠️ *Không thể cập nhật được thông tin:* ${err.message}. Sếp thử diễn đạt lại giúp em nhé!`
+        text: `Không thể cập nhật được thông tin: ${err.message}.`
       });
       return;
     }
@@ -539,7 +538,7 @@ async function handleSlackEvent(event) {
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "🤖 *Chào Sếp! Em đã nhận được yêu cầu thêm thông tin vé máy bay của Sếp.*\n📎 *Tuy nhiên em chưa thấy file ảnh vé hoặc thẻ lên máy bay đính kèm.* Sếp vui lòng đính kèm ảnh vé máy bay (ảnh e-ticket/boarding pass) vào tin nhắn và gửi lại để em quét tự động nhé!\n*(Hoặc Sếp có thể gõ lệnh `/travel-admin` để mở form điền thông tin trực tiếp)*"
+      text: "Bạn vừa gửi yêu cầu về vé máy bay nhưng chưa có ảnh đính kèm. Vui lòng gửi kèm ảnh vé máy bay/boarding pass để hệ thống xử lý, hoặc dùng lệnh /travel-admin để tạo thủ công."
     });
     return;
   }
@@ -557,18 +556,18 @@ async function handleSlackEvent(event) {
           blocks: [
             {
               type: "header",
-              text: { type: "plain_text", text: "📋 ĐÃ GHI NHẬN YÊU CẦU TẠO PURCHASE REQUEST (PR)", emoji: true }
+              text: { type: "plain_text", text: "YÊU CẦU TẠO PURCHASE REQUEST (PR)", emoji: false }
             },
             {
               type: "section",
-              text: { type: "mrkdwn", text: `Dạ, em đã ghi nhận đề xuất công tác của Sếp và chuẩn bị sẵn phiếu duyệt PR:` }
+              text: { type: "mrkdwn", text: `Đã ghi nhận đề xuất công tác:` }
             },
             {
               type: "section",
               fields: [
-                { type: "mrkdwn", text: `*Điểm đến:*\n📍 ${prData.destination || 'Chưa rõ'}` },
-                { type: "mrkdwn", text: `*Ngày đi dự kiến:*\n🗓️ ${prData.departure_date || 'Chưa định ngày'}` },
-                { type: "mrkdwn", text: `*Ngân sách dự trù:*\n💰 ${Number(prData.estimated_cost || 0).toLocaleString('vi-VN')} VND` },
+                { type: "mrkdwn", text: `*Điểm đến:*\n${prData.destination || 'Chưa rõ'}` },
+                { type: "mrkdwn", text: `*Ngày đi dự kiến:*\n${prData.departure_date || 'Chưa định ngày'}` },
+                { type: "mrkdwn", text: `*Ngân sách dự trù:*\n${Number(prData.estimated_cost || 0).toLocaleString('vi-VN')} VND` },
                 { type: "mrkdwn", text: `*Mục đích:*\n${prData.purpose || 'Công tác'}` }
               ]
             },
@@ -577,7 +576,7 @@ async function handleSlackEvent(event) {
               elements: [
                 {
                   type: "button",
-                  text: { type: "plain_text", text: "✅ Gửi Sếp Tổng / CFO Duyệt", emoji: true },
+                  text: { type: "plain_text", text: "Gửi phê duyệt", emoji: false },
                   style: "primary",
                   action_id: "submit_pr_approval",
                   value: JSON.stringify(prData)
@@ -597,7 +596,7 @@ async function handleSlackEvent(event) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: "👋 *Chào Sếp! Em là Smart Travel Assistant - Trợ lý Quản lý Công tác Thông minh.*\n\nSếp có thể giao việc cho em bằng các cách sau:\n1. 📸 *Kéo thả ảnh vé máy bay/boarding pass vào đây kèm tag tên em:* Em sẽ tự động bóc tách thông tin, cho phép Sếp chỉnh sửa qua chat và lưu vào Google Sheets.\n2. ✏️ *Sửa thông tin lịch trình đã lưu:* Nhắn tin trực tiếp (VD: `Sửa giờ bay của TRIP-202611-824 thành 16:30`).\n3. 📝 *Gõ lệnh `/travel-admin`:* Mở form đặt lịch công tác chuẩn 9 trường dữ liệu.\n4. 💬 *Nhắn tin tự nhiên xin đi công tác (VD:* `Tạo giúp anh PR đi Hà Nội ngày 20/11 ngân sách 15tr`*):* Em sẽ soạn sẵn phiếu trình duyệt gửi Sếp Tổng/CFO!"
+        text: "Smart Travel Assistant - Trợ lý Quản lý Công tác.\n\nCác tính năng hỗ trợ:\n1. Gửi ảnh vé máy bay: Tự động trích xuất thông tin, cho phép kiểm tra, chỉnh sửa qua biểu mẫu và xác nhận lưu.\n2. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu (Ví dụ: Sửa giờ bay của TRIP-202611-824 thành 16:30).\n3. Dùng lệnh /travel-admin: Mở form đặt lịch công tác.\n4. Đề xuất công tác: Nhắn tin tự nhiên (Ví dụ: Đề xuất đi Hà Nội ngày 20/11 ngân sách 15 triệu)."
       });
       return;
     }
@@ -608,7 +607,7 @@ async function handleSlackEvent(event) {
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "👋 *Chào Sếp! Em là Smart Travel Assistant - Trợ lý Quản lý Công tác Thông minh.*\n\nSếp có thể giao việc cho em bằng các cách sau:\n1. 📸 *Kéo thả ảnh vé máy bay/boarding pass vào đây kèm tag tên em:* Em sẽ tự động bóc tách thông tin, cho phép Sếp chỉnh sửa qua chat và lưu vào Google Sheets.\n2. ✏️ *Sửa thông tin lịch trình đã lưu:* Nhắn tin trực tiếp (VD: `Sửa giờ bay của TRIP-202611-824 thành 16:30`).\n3. 📝 *Gõ lệnh `/travel-admin`:* Mở form đặt lịch công tác chuẩn 9 trường dữ liệu.\n4. 💬 *Nhắn tin tự nhiên xin đi công tác (VD:* `Tạo giúp anh PR đi Hà Nội ngày 20/11 ngân sách 15tr`*):* Em sẽ soạn sẵn phiếu trình duyệt gửi Sếp Tổng/CFO!"
+      text: "Smart Travel Assistant - Trợ lý Quản lý Công tác.\n\nCác tính năng hỗ trợ:\n1. Gửi ảnh vé máy bay: Tự động trích xuất thông tin, cho phép kiểm tra, chỉnh sửa qua biểu mẫu và xác nhận lưu.\n2. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu (Ví dụ: Sửa giờ bay của TRIP-202611-824 thành 16:30).\n3. Dùng lệnh /travel-admin: Mở form đặt lịch công tác.\n4. Đề xuất công tác: Nhắn tin tự nhiên (Ví dụ: Đề xuất đi Hà Nội ngày 20/11 ngân sách 15 triệu)."
     });
   }
 }
@@ -759,71 +758,137 @@ exports.handler = async (event, context) => {
     if (payloadStr) {
       const payload = JSON.parse(payloadStr);
 
-      // A. Xử lý khi Admin Submit Form Modal
+      // A. Xử lý khi Submit Form Modal
       if (payload.type === 'view_submission') {
-        const values = payload.view.state.values;
-        const passengerName = values.name_block?.name_input?.value || 'N/A';
-        const passengerEmail = values.email_block?.email_input?.value || 'user@company.com';
-        const flightRaw = values.flight_block?.flight_input?.value || 'VN214';
-        const depIata = (values.dep_iata_block?.dep_iata_input?.value || 'SGN').trim().toUpperCase();
-        const arrIata = (values.arr_iata_block?.arr_iata_input?.value || 'HAN').trim().toUpperCase();
-        const depTime = (values.time_block?.time_input?.value || '2026-11-20 08:30').trim();
-        const pnr = (values.pnr_block?.pnr_input?.value || 'N/A').trim().toUpperCase();
-        const price = (values.cost_block?.cost_input?.value || '0').replace(/[^0-9]/g, '');
-        const purpose = values.purpose_block?.purpose_input?.value || 'Công tác nội bộ';
+        const callbackId = payload.view?.callback_id;
 
-        let flightNum = flightRaw;
-        let airline = 'Vietnam Airlines';
-        if (flightRaw.includes('-')) {
-          const parts = flightRaw.split('-');
-          flightNum = parts[0].trim();
-          airline = parts[1].trim();
+        // 1. Submit modal Chỉnh sửa vé máy bay (Edit Ticket Modal)
+        if (callbackId === 'edit_ticket_modal_submit') {
+          const values = payload.view.state.values;
+          const meta = JSON.parse(payload.view.private_metadata || '{}');
+          const channelId = meta.channel_id;
+          const threadTs = meta.thread_ts;
+
+          const depIata = (values.dep_iata_block?.dep_iata_input?.value || '').trim().toUpperCase();
+          const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
+
+          const cityMap = {
+            'SGN': 'Hồ Chí Minh', 'HAN': 'Hà Nội', 'DAD': 'Đà Nẵng', 'VCA': 'Cần Thơ',
+            'CXR': 'Nha Trang', 'PQC': 'Phú Quốc', 'HPH': 'Hải Phòng', 'VII': 'Vinh',
+            'HUI': 'Huế', 'KUL': 'Kuala Lumpur', 'SIN': 'Singapore', 'BKK': 'Bangkok', 'NRT': 'Tokyo'
+          };
+
+          const priceRaw = values.price_block?.price_input?.value || '0';
+          const cleanPrice = priceRaw.replace(/[^0-9]/g, '');
+
+          const updatedTicket = {
+            passenger_name: values.name_block?.name_input?.value || 'N/A',
+            airline: values.airline_block?.airline_input?.value || 'Vietnam Airlines',
+            flight_number: values.flight_block?.flight_input?.value || 'N/A',
+            departure_iata: depIata,
+            departure_city: cityMap[depIata] || depIata,
+            arrival_iata: arrIata,
+            arrival_city: cityMap[arrIata] || arrIata,
+            departure_time: values.dep_time_block?.dep_time_input?.value || '',
+            arrival_time: values.dep_time_block?.dep_time_input?.value || '',
+            pnr: (values.pnr_block?.pnr_input?.value || '').trim().toUpperCase(),
+            seat: values.seat_block?.seat_input?.value || '',
+            ticket_class: values.class_block?.class_input?.value || 'Economy',
+            ticket_price: cleanPrice || '0'
+          };
+
+          // Lưu bản nháp vào DynamoDB
+          if (channelId) {
+            await docClient.send(new PutCommand({
+              TableName: DYNAMODB_TABLE,
+              Item: {
+                trip_id: `DRAFT#${channelId}`,
+                channel_id: channelId,
+                thread_ts: threadTs,
+                ticket_data: updatedTicket,
+                created_at: new Date().toISOString()
+              }
+            }));
+
+            // Gửi thẻ xem trước đã cập nhật vào kênh
+            const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicket, true);
+            postSlackMessage(channelId, updatedCard).catch(console.error);
+          }
+
+          // Trả về đóng modal ngay lập tức
+          return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response_action: 'clear' })
+          };
         }
 
-        const cityMap = { 'SGN': 'Hồ Chí Minh', 'HAN': 'Hà Nội', 'DAD': 'Đà Nẵng', 'NRT': 'Tokyo', 'SIN': 'Singapore', 'VCA': 'Cần Thơ' };
-        const tripData = {
-          passenger_name: passengerName,
-          passenger_email: passengerEmail,
-          airline: airline,
-          flight_number: flightNum,
-          departure_iata: depIata,
-          departure_city: cityMap[depIata] || depIata,
-          arrival_iata: arrIata,
-          arrival_city: cityMap[arrIata] || arrIata,
-          departure_time: depTime,
-          pnr: pnr,
-          ticket_class: 'Economy',
-          ticket_price: price || '0',
-          purpose: purpose
-        };
+        // 2. Submit modal đặt lịch thủ công (/travel-admin)
+        if (callbackId === 'travel_booking_modal') {
+          const values = payload.view.state.values;
+          const passengerName = values.name_block?.name_input?.value || 'N/A';
+          const passengerEmail = values.email_block?.email_input?.value || 'user@company.com';
+          const flightRaw = values.flight_block?.flight_input?.value || 'VN214';
+          const depIata = (values.dep_iata_block?.dep_iata_input?.value || 'SGN').trim().toUpperCase();
+          const arrIata = (values.arr_iata_block?.arr_iata_input?.value || 'HAN').trim().toUpperCase();
+          const depTime = (values.time_block?.time_input?.value || '2026-11-20 08:30').trim();
+          const pnr = (values.pnr_block?.pnr_input?.value || 'N/A').trim().toUpperCase();
+          const price = (values.cost_block?.cost_input?.value || '0').replace(/[^0-9]/g, '');
+          const purpose = values.purpose_block?.purpose_input?.value || 'Công tác nội bộ';
 
-        saveTripRecord(tripData).then(({ tripId }) => {
-          postSlackMessage(process.env.SLACK_ADMIN_CHANNEL_ID || 'C0CGLFPNW7R', {
-            blocks: [
-              {
-                type: "header",
-                text: { type: "plain_text", text: "✈️ ĐÃ TẠO CHUYẾN CÔNG TÁC MỚI QUA SLACK MODAL", emoji: true }
-              },
-              {
-                type: "section",
-                fields: [
-                  { type: "mrkdwn", text: `*Hành khách:*\n${passengerName}` },
-                  { type: "mrkdwn", text: `*Chuyến bay:*\n${flightNum} (${airline})` },
-                  { type: "mrkdwn", text: `*Lộ trình:*\n${tripData.departure_city} (${tripData.departure_iata}) ➔ ${tripData.arrival_city} (${tripData.arrival_iata})` },
-                  { type: "mrkdwn", text: `*Giờ cất cánh:*\n🕒 ${depTime}` },
-                  { type: "mrkdwn", text: `*Trip ID:*\n\`${tripId}\`` },
-                  { type: "mrkdwn", text: `*PNR:*\n🎫 \`${pnr}\`` }
-                ]
-              }
-            ]
+          let flightNum = flightRaw;
+          let airline = 'Vietnam Airlines';
+          if (flightRaw.includes('-')) {
+            const parts = flightRaw.split('-');
+            flightNum = parts[0].trim();
+            airline = parts[1].trim();
+          }
+
+          const cityMap = { 'SGN': 'Hồ Chí Minh', 'HAN': 'Hà Nội', 'DAD': 'Đà Nẵng', 'NRT': 'Tokyo', 'SIN': 'Singapore', 'VCA': 'Cần Thơ' };
+          const tripData = {
+            passenger_name: passengerName,
+            passenger_email: passengerEmail,
+            airline: airline,
+            flight_number: flightNum,
+            departure_iata: depIata,
+            departure_city: cityMap[depIata] || depIata,
+            arrival_iata: arrIata,
+            arrival_city: cityMap[arrIata] || arrIata,
+            departure_time: depTime,
+            pnr: pnr,
+            ticket_class: 'Economy',
+            ticket_price: price || '0',
+            purpose: purpose
+          };
+
+          saveTripRecord(tripData).then(({ tripId }) => {
+            postSlackMessage(process.env.SLACK_ADMIN_CHANNEL_ID || 'C0CGLFPNW7R', {
+              blocks: [
+                {
+                  type: "header",
+                  text: { type: "plain_text", text: "ĐÃ TẠO CHUYẾN CÔNG TÁC MỚI", emoji: false }
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: `*Hành khách:*\n${passengerName}` },
+                    { type: "mrkdwn", text: `*Chuyến bay:*\n${flightNum} (${airline})` },
+                    { type: "mrkdwn", text: `*Lộ trình:*\n${tripData.departure_city} (${tripData.departure_iata}) ➔ ${tripData.arrival_city} (${tripData.arrival_iata})` },
+                    { type: "mrkdwn", text: `*Giờ cất cánh:*\n${depTime}` },
+                    { type: "mrkdwn", text: `*Trip ID:*\n\`${tripId}\`` },
+                    { type: "mrkdwn", text: `*PNR:*\n\`${pnr}\`` }
+                  ]
+                }
+              ]
+            }).catch(console.error);
           }).catch(console.error);
-        }).catch(console.error);
 
-        return {
-          statusCode: 200,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ response_action: 'clear' })
-        };
+          return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response_action: 'clear' })
+          };
+        }
       }
 
       // B. Xử lý các nút bấm tương tác (Block Actions)
@@ -831,10 +896,164 @@ exports.handler = async (event, context) => {
         const action = payload.actions?.[0];
         const channelId = payload.channel?.id || payload.container?.channel_id;
 
+        // B1. Người dùng bấm nút "Chỉnh sửa" -> Mở Modal Popup Form
+        if (action?.action_id === 'open_edit_ticket_modal') {
+          const triggerId = payload.trigger_id;
+          const threadTs = payload.message?.thread_ts || payload.message?.ts;
+
+          let ticketData = null;
+          if (channelId) {
+            try {
+              const draftRes = await docClient.send(new GetCommand({
+                TableName: DYNAMODB_TABLE,
+                Key: { trip_id: `DRAFT#${channelId}` }
+              }));
+              if (draftRes.Item?.ticket_data) {
+                ticketData = draftRes.Item.ticket_data;
+              }
+            } catch (e) {
+              console.log('Error reading draft for edit modal:', e);
+            }
+          }
+
+          if (!ticketData && action.value) {
+            try { ticketData = JSON.parse(action.value); } catch {}
+          }
+          ticketData = ticketData || {};
+
+          const editModalView = {
+            type: "modal",
+            callback_id: "edit_ticket_modal_submit",
+            title: { type: "plain_text", text: "Chỉnh sửa thông tin vé" },
+            submit: { type: "plain_text", text: "Lưu thay đổi" },
+            close: { type: "plain_text", text: "Hủy" },
+            private_metadata: JSON.stringify({
+              channel_id: channelId,
+              thread_ts: threadTs
+            }),
+            blocks: [
+              {
+                type: "input",
+                block_id: "name_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "name_input",
+                  initial_value: ticketData.passenger_name || ""
+                },
+                label: { type: "plain_text", text: "Họ và tên hành khách" }
+              },
+              {
+                type: "input",
+                block_id: "airline_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "airline_input",
+                  initial_value: ticketData.airline || "Vietnam Airlines"
+                },
+                label: { type: "plain_text", text: "Hãng hàng không" }
+              },
+              {
+                type: "input",
+                block_id: "flight_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "flight_input",
+                  initial_value: ticketData.flight_number || ""
+                },
+                label: { type: "plain_text", text: "Số hiệu chuyến bay" }
+              },
+              {
+                type: "input",
+                block_id: "dep_iata_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "dep_iata_input",
+                  initial_value: ticketData.departure_iata || ""
+                },
+                label: { type: "plain_text", text: "Sân bay cất cánh (IATA, ví dụ: HAN, SGN)" }
+              },
+              {
+                type: "input",
+                block_id: "arr_iata_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "arr_iata_input",
+                  initial_value: ticketData.arrival_iata || ""
+                },
+                label: { type: "plain_text", text: "Sân bay hạ cánh (IATA, ví dụ: VCA, DAD)" }
+              },
+              {
+                type: "input",
+                block_id: "dep_time_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "dep_time_input",
+                  initial_value: ticketData.departure_time || ""
+                },
+                label: { type: "plain_text", text: "Thời gian cất cánh (YYYY-MM-DD HH:mm)" }
+              },
+              {
+                type: "input",
+                block_id: "pnr_block",
+                element: {
+                  type: "plain_text_input",
+                  action_id: "pnr_input",
+                  initial_value: ticketData.pnr || ""
+                },
+                label: { type: "plain_text", text: "Mã đặt chỗ (PNR)" }
+              },
+              {
+                type: "input",
+                block_id: "seat_block",
+                optional: true,
+                element: {
+                  type: "plain_text_input",
+                  action_id: "seat_input",
+                  initial_value: ticketData.seat || ""
+                },
+                label: { type: "plain_text", text: "Số ghế" }
+              },
+              {
+                type: "input",
+                block_id: "class_block",
+                optional: true,
+                element: {
+                  type: "plain_text_input",
+                  action_id: "class_input",
+                  initial_value: ticketData.ticket_class || "Economy"
+                },
+                label: { type: "plain_text", text: "Hạng vé (Economy/Business)" }
+              },
+              {
+                type: "input",
+                block_id: "price_block",
+                optional: true,
+                element: {
+                  type: "plain_text_input",
+                  action_id: "price_input",
+                  initial_value: String(ticketData.ticket_price || "0")
+                },
+                label: { type: "plain_text", text: "Giá vé (VND)" }
+              }
+            ]
+          };
+
+          if (triggerId) {
+            await makeRequest('https://slack.com/api/views.open', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SLACK_BOT_TOKEN}`,
+                'Content-Type': 'application/json; charset=utf-8'
+              }
+            }, { trigger_id: triggerId, view: editModalView });
+          }
+          return { statusCode: 200, body: '' };
+        }
+
+        // B2. Người dùng bấm nút "Xác nhận"
         if (action?.action_id === 'confirm_save_ticket') {
           let ticketData = null;
 
-          // 1. Kiểm tra xem có DRAFT mới nhất trong DynamoDB không (nếu user đã sửa qua chat)
           if (channelId) {
             try {
               const draftRes = await docClient.send(new GetCommand({
@@ -849,17 +1068,13 @@ exports.handler = async (event, context) => {
             }
           }
 
-          // Fallback: dùng giá trị gán trên button
           if (!ticketData && action.value) {
-            try {
-              ticketData = JSON.parse(action.value);
-            } catch {}
+            try { ticketData = JSON.parse(action.value); } catch {}
           }
 
           if (ticketData) {
             const { tripId } = await saveTripRecord(ticketData);
 
-            // Xóa bản nháp DRAFT sau khi đã lưu chính thức
             if (channelId) {
               try {
                 await docClient.send(new DeleteCommand({
@@ -874,7 +1089,7 @@ exports.handler = async (event, context) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
               }, {
-                text: `🎉 *ĐÃ LƯU THÀNH CÔNG VÀO GOOGLE SHEET & DYNAMODB!*\n• *Mã chuyến đi (Trip ID):* \`${tripId}\`\n• *Hành khách:* *${ticketData.passenger_name || 'N/A'}*\n• *Chuyến bay:* *${ticketData.flight_number || 'N/A'}* (${ticketData.airline || 'N/A'})\n• *Giờ cất cánh:* *${ticketData.departure_time || 'N/A'}*\n\n💡 *Gợi ý:* Nếu sau này cần thay đổi thông tin chuyến đi này trên Google Sheet, Sếp chỉ cần nhắn tin cho em: _"Sửa giờ bay của ${tripId} thành..."_ là em tự động cập nhật lại nhé!`
+                text: `Đã lưu thành công vào lịch trình công tác.\n• Mã chuyến đi: \`${tripId}\`\n• Hành khách: ${ticketData.passenger_name || 'N/A'}\n• Chuyến bay: ${ticketData.flight_number || 'N/A'} (${ticketData.airline || 'N/A'})\n• Giờ cất cánh: ${ticketData.departure_time || 'N/A'}\n\nGhi chú: Để thay đổi thông tin chuyến đi này, bạn có thể nhắn tin yêu cầu sửa bất kỳ lúc nào.`
               });
             }
           }
@@ -892,7 +1107,7 @@ exports.handler = async (event, context) => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
             }, {
-              text: "❌ *Đã hủy thông tin vé máy bay này theo yêu cầu của Sếp.*"
+              text: "Đã hủy thông tin vé máy bay."
             });
           }
         } else if (action?.action_id === 'submit_pr_approval') {
@@ -901,7 +1116,7 @@ exports.handler = async (event, context) => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
             }, {
-              text: "✅ *Yêu cầu Purchase Request (PR) đã được chuyển tiếp đến Ban Giám Đốc/CFO để phê duyệt!*\nSau khi duyệt thành công, hệ thống sẽ tự động cập nhật lịch trình."
+              text: "Yêu cầu Purchase Request (PR) đã được chuyển tiếp để phê duyệt."
             });
           }
         }
