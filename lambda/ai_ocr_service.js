@@ -81,7 +81,7 @@ Hãy trích xuất thông tin từ ảnh vé máy bay/boarding pass này và tr�
   "arrival_time": "YYYY-MM-DD HH:mm",
   "pnr": "Mã đặt chỗ 6 ký tự",
   "ticket_class": "Hạng vé (Economy/Business)",
-  "ticket_price": "Giá vé số nguyên (nếu có, nếu không thì 0)"
+  "ticket_price": "Giá vé số nguyên nếu có hiển thị rõ (ví dụ: 1800000). Nếu trên vé/boarding pass không có giá vé thì để 'Chưa rõ', tuyệt đối không điền số 0"
 }`;
 
   const payload = {
@@ -104,7 +104,11 @@ Hãy trích xuất thông tin từ ảnh vé máy bay/boarding pass này và tr�
   };
 
   const raw = await callOpenRouter(payload);
-  return cleanJsonResponse(raw);
+  const parsed = cleanJsonResponse(raw);
+  if (!parsed.ticket_price || parsed.ticket_price === '0' || parsed.ticket_price === 0 || String(parsed.ticket_price).toLowerCase() === 'null') {
+    parsed.ticket_price = 'Chưa rõ';
+  }
+  return parsed;
 }
 
 async function parsePurchaseRequestChat(userMessage) {
@@ -171,7 +175,11 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ với đầy đủ cá
   };
 
   const raw = await callOpenRouter(payload);
-  return cleanJsonResponse(raw);
+  const parsed = cleanJsonResponse(raw);
+  if (!parsed.ticket_price || parsed.ticket_price === '0' || parsed.ticket_price === 0 || String(parsed.ticket_price).toLowerCase() === 'null') {
+    parsed.ticket_price = 'Chưa rõ';
+  }
+  return parsed;
 }
 
 /**
@@ -212,7 +220,11 @@ Hãy phân tích và trả về các trường cần sửa đổi thành JSON th
   };
 
   const raw = await callOpenRouter(payload);
-  return cleanJsonResponse(raw);
+  const parsed = cleanJsonResponse(raw);
+  if (parsed.updated_fields && (parsed.updated_fields.ticket_price === '0' || parsed.updated_fields.ticket_price === 0)) {
+    parsed.updated_fields.ticket_price = 'Chưa rõ';
+  }
+  return parsed;
 }
 
 module.exports = {

@@ -114,6 +114,34 @@ async function getGoogleAccessToken() {
   return cachedGoogleToken;
 }
 
+// Get Slack user info (username handle and email)
+async function getSlackUserInfo(userId) {
+  if (!userId) return null;
+  const slackToken = process.env.SLACK_BOT_TOKEN;
+  try {
+    const res = await makeRequest(`https://slack.com/api/users.info?user=${encodeURIComponent(userId)}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${slackToken}` }
+    });
+    if (res.data && res.data.ok && res.data.user) {
+      const u = res.data.user;
+      const rawHandle = u.name || u.profile?.display_name || u.real_name || userId;
+      const cleanHandle = `@${rawHandle.replace(/^@/, '')}`;
+      return {
+        id: userId,
+        username: cleanHandle,
+        name: u.name || '',
+        display_name: u.profile?.display_name || '',
+        real_name: u.real_name || u.profile?.real_name || '',
+        email: u.profile?.email || null
+      };
+    }
+  } catch (err) {
+    console.error('Error fetching Slack user info:', err);
+  }
+  return null;
+}
+
 // Download private file from Slack
 function downloadSlackFile(urlStr) {
   return new Promise((resolve, reject) => {
@@ -220,6 +248,7 @@ module.exports = {
   downloadSlackFile,
   getSlackFileInfo,
   getRecentChannelFiles,
+  getSlackUserInfo,
   postSlackMessage,
   invokeLambdaAsync
 };

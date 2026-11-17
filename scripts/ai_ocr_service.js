@@ -78,7 +78,7 @@ BẮT BUỘC chỉ trả về 1 chuỗi JSON thuần túy (không kèm giải th
   "departure_time": "Ngày giờ cất cánh theo format YYYY-MM-DD HH:mm (nếu không có năm thì lấy năm 2026)",
   "arrival_time": "Ngày giờ hạ cánh theo format YYYY-MM-DD HH:mm",
   "ticket_class": "Hạng vé (Economy, Business, Eco...)",
-  "ticket_price": "Giá vé nếu có hiển thị (chỉ lấy số, nếu không thấy thì để 0)"
+  "ticket_price": "Giá vé nếu có hiển thị (chỉ lấy số, nếu không thấy thì để 'Chưa rõ', tuyệt đối không để 0)"
 }`;
 
   const requestBody = {

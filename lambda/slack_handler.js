@@ -22,6 +22,7 @@ const {
   downloadSlackFile,
   getSlackFileInfo,
   getRecentChannelFiles,
+  getSlackUserInfo,
   postSlackMessage,
   invokeLambdaAsync
 } = require('./common');
@@ -60,30 +61,52 @@ async function saveTripRecord(tripData) {
   const tripId = `TRIP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${tripSeq}`;
   const prNumber = `PR-${now.getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
 
+  // 1. Xác định Slack Username thực tế của người dùng
+  let slackUsername = tripData.slack_username;
+  if (!slackUsername || slackUsername === '@user') {
+    if (tripData.passenger_email && !tripData.passenger_email.includes('user@company.com')) {
+      slackUsername = `@${tripData.passenger_email.split('@')[0]}`;
+    } else {
+      slackUsername = '@user';
+    }
+  }
+
+  // 2. Xác định Giá vé (Cost)
+  const hasValidPrice = tripData.ticket_price &&
+    tripData.ticket_price !== '0' &&
+    tripData.ticket_price !== 0 &&
+    tripData.ticket_price !== 'Chưa rõ' &&
+    tripData.ticket_price !== 'null' &&
+    tripData.ticket_price !== 'NaN';
+
+  const costDisplay = hasValidPrice
+    ? String(tripData.ticket_price).replace(/[^0-9]/g, '')
+    : 'Chưa rõ';
+
   const newRow = [
-    tripId,
-    prNumber,
-    "APPROVED",
-    tripData.passenger_name || "N/A",
-    "Nhân sự / Quản lý",
-    tripData.passenger_email || "user@company.com",
-    `@${(tripData.passenger_email || 'user').split('@')[0]}`,
-    tripData.airline || "Vietnam Airlines",
-    tripData.flight_number || "VN214",
-    tripData.departure_city || "Hồ Chí Minh",
-    tripData.departure_iata || "SGN",
-    tripData.arrival_city || "Hà Nội",
-    tripData.arrival_iata || "HAN",
-    tripData.departure_time || "2026-11-20 08:30",
-    tripData.arrival_time || "",
-    tripData.pnr || "N/A",
-    tripData.ticket_class || "Economy",
-    tripData.ticket_price || "0",
-    "Corporate Card",
-    tripData.purpose || "Công tác nội bộ",
-    "PENDING",
-    "VALID",
-    "Được bóc tách tự động qua AWS Lambda & AI Vision OCR."
+    tripId,                                                      // A: Trip_ID
+    prNumber,                                                    // B: PR_Number
+    "APPROVED",                                                  // C: Status
+    tripData.passenger_name || "N/A",                            // D: Passenger_Name
+    "Nhân sự / Quản lý",                                         // E: Department
+    tripData.passenger_email || "user@company.com",              // F: Passenger_Email
+    slackUsername,                                               // G: Slack_Username
+    tripData.airline || "Vietnam Airlines",                      // H: Airline
+    tripData.flight_number || "VN214",                           // I: Flight_Code
+    tripData.departure_city || "Hồ Chí Minh",                    // J: Departure_City
+    tripData.departure_iata || "SGN",                            // K: Departure_IATA
+    tripData.arrival_city || "Hà Nội",                           // L: Arrival_City
+    tripData.arrival_iata || "HAN",                              // M: Arrival_IATA
+    tripData.departure_time || "2026-11-20 08:30",               // N: Departure_Time
+    tripData.arrival_time || "",                                 // O: Arrival_Time
+    tripData.pnr || "N/A",                                       // P: PNR
+    tripData.ticket_class || "Economy",                          // Q: Ticket_Class
+    costDisplay,                                                 // R: Cost
+    "Corporate Card",                                            // S: Payment_Method
+    tripData.purpose || "Công tác nội bộ",                       // T: Purpose
+    "PENDING",                                                   // U: Reminder_Sent
+    "VALID",                                                     // V: Audit_Status
+    "Được bóc tách tự động qua AWS Lambda & AI Vision OCR."      // W: Notes
   ];
 
   // 1. Ghi Google Sheet
@@ -105,7 +128,8 @@ async function saveTripRecord(tripData) {
       status: 'APPROVED',
       passenger_name: tripData.passenger_name || 'N/A',
       passenger_email: tripData.passenger_email || 'user@company.com',
-      slack_handle: `@${(tripData.passenger_email || 'user').split('@')[0]}`,
+      slack_handle: slackUsername,
+      slack_user_id: tripData.slack_user_id || '',
       airline: tripData.airline || 'Vietnam Airlines',
       flight_number: tripData.flight_number || 'VN214',
       departure_city: tripData.departure_city || 'Hồ Chí Minh',
@@ -116,7 +140,7 @@ async function saveTripRecord(tripData) {
       arrival_time: tripData.arrival_time || '',
       pnr: tripData.pnr || 'N/A',
       ticket_class: tripData.ticket_class || 'Economy',
-      ticket_price: String(tripData.ticket_price || '0'),
+      ticket_price: costDisplay,
       payment_method: 'Corporate Card',
       purpose: tripData.purpose || 'Công tác nội bộ',
       reminder_sent: 'PENDING',
@@ -175,7 +199,11 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
   if (updatedFields.arrival_time) currentRow[14] = updatedFields.arrival_time;
   if (updatedFields.pnr) currentRow[15] = updatedFields.pnr.toUpperCase();
   if (updatedFields.ticket_class) currentRow[16] = updatedFields.ticket_class;
-  if (updatedFields.ticket_price !== undefined) currentRow[17] = String(updatedFields.ticket_price);
+  if (updatedFields.ticket_price !== undefined) {
+    const rawP = String(updatedFields.ticket_price).trim();
+    const cleanP = rawP.replace(/[^0-9]/g, '');
+    currentRow[17] = cleanP && cleanP !== '0' ? cleanP : (rawP && rawP !== '0' ? rawP : 'Chưa rõ');
+  }
   if (updatedFields.purpose) currentRow[19] = updatedFields.purpose;
 
   currentRow[21] = 'VALID';
@@ -231,9 +259,16 @@ function buildTicketPreviewCard(channelId, threadTs, ticketInfo, isUpdated = fal
     ? "Thông tin vé máy bay sau khi chỉnh sửa:"
     : "Thông tin bóc tách từ vé máy bay:";
 
-  const priceDisplay = ticketInfo.ticket_price && ticketInfo.ticket_price !== '0'
-    ? `${Number(ticketInfo.ticket_price).toLocaleString('vi-VN')} VND`
-    : (ticketInfo.ticket_number ? `Số vé: ${ticketInfo.ticket_number}` : 'Đã xuất vé (Boarding Pass)');
+  const hasValidPrice = ticketInfo.ticket_price &&
+    ticketInfo.ticket_price !== '0' &&
+    ticketInfo.ticket_price !== 0 &&
+    ticketInfo.ticket_price !== 'Chưa rõ' &&
+    ticketInfo.ticket_price !== 'null' &&
+    ticketInfo.ticket_price !== 'NaN';
+
+  const priceDisplay = hasValidPrice
+    ? `${Number(String(ticketInfo.ticket_price).replace(/[^0-9]/g, '')).toLocaleString('vi-VN')} VND`
+    : 'Chưa rõ';
 
   return {
     channel: channelId,
@@ -257,7 +292,7 @@ function buildTicketPreviewCard(channelId, threadTs, ticketInfo, isUpdated = fal
           { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_iata || 'HAN'}${ticketInfo.departure_city ? ` (${ticketInfo.departure_city})` : ''} ➔ ${ticketInfo.arrival_iata || 'VCA'}${ticketInfo.arrival_city ? ` (${ticketInfo.arrival_city})` : ''}` },
           { type: "mrkdwn", text: `*Giờ cất cánh:*\n${ticketInfo.departure_time || 'N/A'}` },
           { type: "mrkdwn", text: `*Hạng vé / Ghế:*\n${ticketInfo.ticket_class || 'Economy'}${ticketInfo.seat ? ` (Ghế ${ticketInfo.seat})` : ''}` },
-          { type: "mrkdwn", text: `*Chi phí / Số vé:*\n${priceDisplay}` }
+          { type: "mrkdwn", text: `*Chi phí:*\n${priceDisplay}` }
         ]
       },
       {
@@ -353,6 +388,31 @@ async function handleSlackEvent(event) {
 
       const base64Data = await downloadSlackFile(downloadUrl);
       const ticketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+
+      // Đảm bảo giá vé mặc định là 'Chưa rõ' nếu không bóc tách được hoặc bằng 0
+      if (!ticketInfo.ticket_price || ticketInfo.ticket_price === '0' || ticketInfo.ticket_price === 0 || String(ticketInfo.ticket_price).toLowerCase() === 'null') {
+        ticketInfo.ticket_price = 'Chưa rõ';
+      }
+
+      // Lấy thông tin tài khoản người dùng Slack đã gửi ảnh vé
+      const senderUserId = event.user || file.user;
+      if (senderUserId) {
+        ticketInfo.slack_user_id = senderUserId;
+        try {
+          const slackUser = await getSlackUserInfo(senderUserId);
+          if (slackUser) {
+            ticketInfo.slack_username = slackUser.username;
+            if (slackUser.email) {
+              ticketInfo.passenger_email = slackUser.email;
+            }
+          } else {
+            ticketInfo.slack_username = `@${senderUserId}`;
+          }
+        } catch (e) {
+          console.error('Error getting slack user info:', e);
+          ticketInfo.slack_username = `@${senderUserId}`;
+        }
+      }
 
       // Lưu bản nháp (Draft) vào DynamoDB để hỗ trợ chỉnh sửa
       await docClient.send(new PutCommand({
@@ -502,6 +562,22 @@ async function handleSlackEvent(event) {
 
     try {
       const updatedTicketData = await applyConversationalCorrection(currentDraft.ticket_data, userText);
+
+      // Chuẩn hóa giá vé nếu AI không đọc được hoặc là 0
+      if (!updatedTicketData.ticket_price || updatedTicketData.ticket_price === '0' || updatedTicketData.ticket_price === 0 || String(updatedTicketData.ticket_price).toLowerCase() === 'null') {
+        updatedTicketData.ticket_price = 'Chưa rõ';
+      }
+
+      // Giữ lại slack_username và email từ draft cũ
+      if (!updatedTicketData.slack_username && currentDraft.ticket_data?.slack_username) {
+        updatedTicketData.slack_username = currentDraft.ticket_data.slack_username;
+      }
+      if (!updatedTicketData.slack_user_id && currentDraft.ticket_data?.slack_user_id) {
+        updatedTicketData.slack_user_id = currentDraft.ticket_data.slack_user_id;
+      }
+      if (!updatedTicketData.passenger_email && currentDraft.ticket_data?.passenger_email) {
+        updatedTicketData.passenger_email = currentDraft.ticket_data.passenger_email;
+      }
 
       // Lưu lại bản nháp mới vào DynamoDB
       await docClient.send(new PutCommand({
@@ -778,11 +854,25 @@ exports.handler = async (event, context) => {
             'HUI': 'Huế', 'KUL': 'Kuala Lumpur', 'SIN': 'Singapore', 'BKK': 'Bangkok', 'NRT': 'Tokyo'
           };
 
-          const priceRaw = values.price_block?.price_input?.value || '0';
+          const priceRaw = (values.price_block?.price_input?.value || '').trim();
           const cleanPrice = priceRaw.replace(/[^0-9]/g, '');
+          const finalPrice = cleanPrice && cleanPrice !== '0' ? cleanPrice : (priceRaw.length > 0 && priceRaw !== '0' ? priceRaw : 'Chưa rõ');
+
+          // Lấy thông tin người nộp form chỉnh sửa
+          let submitSlackUser = null;
+          if (payload.user?.id) {
+            try {
+              submitSlackUser = await getSlackUserInfo(payload.user.id);
+            } catch {}
+          }
+          const submitUsername = submitSlackUser?.username || (payload.user?.username ? `@${payload.user.username}` : (payload.user?.name ? `@${payload.user.name}` : null));
+          const submitEmail = submitSlackUser?.email || null;
 
           const updatedTicket = {
             passenger_name: values.name_block?.name_input?.value || 'N/A',
+            passenger_email: submitEmail || 'user@company.com',
+            slack_username: submitUsername || '@user',
+            slack_user_id: payload.user?.id || '',
             airline: values.airline_block?.airline_input?.value || 'Vietnam Airlines',
             flight_number: values.flight_block?.flight_input?.value || 'N/A',
             departure_iata: depIata,
@@ -794,7 +884,7 @@ exports.handler = async (event, context) => {
             pnr: (values.pnr_block?.pnr_input?.value || '').trim().toUpperCase(),
             seat: values.seat_block?.seat_input?.value || '',
             ticket_class: values.class_block?.class_input?.value || 'Economy',
-            ticket_price: cleanPrice || '0'
+            ticket_price: finalPrice
           };
 
           // Lưu bản nháp vào DynamoDB
@@ -844,10 +934,20 @@ exports.handler = async (event, context) => {
             airline = parts[1].trim();
           }
 
+          let bookerUser = null;
+          if (payload.user?.id) {
+            try {
+              bookerUser = await getSlackUserInfo(payload.user.id);
+            } catch {}
+          }
+          const bookerHandle = bookerUser?.username || (payload.user?.username ? `@${payload.user.username}` : (payload.user?.name ? `@${payload.user.name}` : `@${passengerEmail.split('@')[0]}`));
+
           const cityMap = { 'SGN': 'Hồ Chí Minh', 'HAN': 'Hà Nội', 'DAD': 'Đà Nẵng', 'NRT': 'Tokyo', 'SIN': 'Singapore', 'VCA': 'Cần Thơ' };
           const tripData = {
             passenger_name: passengerName,
-            passenger_email: passengerEmail,
+            passenger_email: bookerUser?.email || passengerEmail,
+            slack_username: bookerHandle,
+            slack_user_id: payload.user?.id || '',
             airline: airline,
             flight_number: flightNum,
             departure_iata: depIata,
@@ -857,7 +957,7 @@ exports.handler = async (event, context) => {
             departure_time: depTime,
             pnr: pnr,
             ticket_class: 'Economy',
-            ticket_price: price || '0',
+            ticket_price: price && price !== '0' ? price : 'Chưa rõ',
             purpose: purpose
           };
 
@@ -1031,7 +1131,10 @@ exports.handler = async (event, context) => {
                 element: {
                   type: "plain_text_input",
                   action_id: "price_input",
-                  initial_value: String(ticketData.ticket_price || "0")
+                  initial_value: (ticketData.ticket_price && ticketData.ticket_price !== '0' && ticketData.ticket_price !== 'Chưa rõ')
+                    ? String(ticketData.ticket_price).replace(/[^0-9]/g, '')
+                    : "",
+                  placeholder: { type: "plain_text", text: "Để trống nếu chưa rõ (VD: 1800000)" }
                 },
                 label: { type: "plain_text", text: "Giá vé (VND)" }
               }
@@ -1073,6 +1176,33 @@ exports.handler = async (event, context) => {
           }
 
           if (ticketData) {
+            // Đảm bảo lấy được thông tin người dùng Slack nếu chưa có
+            const clicker = payload.user;
+            if (!ticketData.slack_username || ticketData.slack_username === '@user') {
+              if (clicker?.username || clicker?.name) {
+                ticketData.slack_username = `@${clicker.username || clicker.name}`;
+              }
+              if (clicker?.id) {
+                ticketData.slack_user_id = clicker.id;
+                try {
+                  const u = await getSlackUserInfo(clicker.id);
+                  if (u) {
+                    ticketData.slack_username = u.username;
+                    if ((!ticketData.passenger_email || ticketData.passenger_email === 'user@company.com') && u.email) {
+                      ticketData.passenger_email = u.email;
+                    }
+                  }
+                } catch (e) {
+                  console.error('Error fetching clicker user info:', e);
+                }
+              }
+            }
+
+            // Đảm bảo chuẩn hóa giá vé
+            if (!ticketData.ticket_price || ticketData.ticket_price === '0' || ticketData.ticket_price === 0) {
+              ticketData.ticket_price = 'Chưa rõ';
+            }
+
             const { tripId } = await saveTripRecord(ticketData);
 
             if (channelId) {
@@ -1085,11 +1215,15 @@ exports.handler = async (event, context) => {
             }
 
             if (payload.response_url) {
+              const priceText = (ticketData.ticket_price && ticketData.ticket_price !== 'Chưa rõ' && !isNaN(Number(ticketData.ticket_price)))
+                ? `${Number(ticketData.ticket_price).toLocaleString('vi-VN')} VND`
+                : 'Chưa rõ';
+
               await makeRequest(payload.response_url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
               }, {
-                text: `Đã lưu thành công vào lịch trình công tác.\n• Mã chuyến đi: \`${tripId}\`\n• Hành khách: ${ticketData.passenger_name || 'N/A'}\n• Chuyến bay: ${ticketData.flight_number || 'N/A'} (${ticketData.airline || 'N/A'})\n• Giờ cất cánh: ${ticketData.departure_time || 'N/A'}\n\nGhi chú: Để thay đổi thông tin chuyến đi này, bạn có thể nhắn tin yêu cầu sửa bất kỳ lúc nào.`
+                text: `Đã lưu thành công vào lịch trình công tác.\n• Mã chuyến đi: \`${tripId}\`\n• Hành khách: ${ticketData.passenger_name || 'N/A'}\n• Người tạo: ${ticketData.slack_username || '@user'}\n• Chuyến bay: ${ticketData.flight_number || 'N/A'} (${ticketData.airline || 'N/A'})\n• Giờ cất cánh: ${ticketData.departure_time || 'N/A'}\n• Giá vé: ${priceText}\n\nGhi chú: Để thay đổi thông tin chuyến đi này, bạn có thể nhắn tin yêu cầu sửa bất kỳ lúc nào.`
               });
             }
           }
