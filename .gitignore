@@ -46,3 +46,11 @@ Thumbs.db
 .vscode/
 .idea/
 icon_aws/
+
+# 6. Documentation (Keep only diagrams and Idea.md in git, ignore all other docs)
+docs/*
+!docs/diagrams/
+!docs/diagrams/**
+!docs/Idea.md
+!docs/idea.md
+
