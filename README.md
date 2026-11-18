@@ -13,9 +13,11 @@
 
 ## Architecture Overview
 
-![Smart Travel Assistant - AWS Serverless Architecture](diagrams/smart-travel-assistant/smart-travel-assistant.svg)
+![Smart Travel Assistant - AWS Serverless Architecture](docs/diagrams/smart-travel-assistant/smart-travel-assistant.svg)
 
-> **Interactive Architecture Diagram:** Open [smart-travel-assistant.html](diagrams/smart-travel-assistant/smart-travel-assistant.html) in your browser to inspect interactive node details, step-by-step traffic timeline, and component cards rendered via **AWSketch**.
+> **Interactive Architecture Diagram (AWSketch Records Mode):**
+> * Open [smart-travel-assistant.html](docs/diagrams/smart-travel-assistant/smart-travel-assistant.html) in your browser to inspect interactive node details, step-by-step traffic timeline, and component cards.
+> * Architecture provenance tracked via [smart-travel-assistant.sources.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.sources.md) (SHA-256 fingerprints) and [smart-travel-assistant.decisions.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.decisions.md).
 
 <details>
 <summary><b>Click to expand Text Flowchart (Mermaid)</b></summary>
