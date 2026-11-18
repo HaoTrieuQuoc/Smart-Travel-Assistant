@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "awsketch": {
+      "source": "the-khiem7/AWSketch",
+      "commit": "cfdd6a6ad8278165637962b88906c52b1bf3bf16",
+      "sourceType": "github",
+      "skillPath": "awsketch/SKILL.md",
+      "computedHash": "35471caac3a6b49ae9a578a9f104b68a519e1f344f26ec39bcd858d2a2de6f46"
+    }
+  }
+}

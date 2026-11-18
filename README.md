@@ -13,6 +13,13 @@
 
 ## Architecture Overview
 
+![Smart Travel Assistant - AWS Serverless Architecture](diagrams/smart-travel-assistant/smart-travel-assistant.svg)
+
+> **Interactive Architecture Diagram:** Open [smart-travel-assistant.html](diagrams/smart-travel-assistant/smart-travel-assistant.html) in your browser to inspect interactive node details, step-by-step traffic timeline, and component cards rendered via **AWSketch**.
+
+<details>
+<summary><b>Click to expand Text Flowchart (Mermaid)</b></summary>
+
 ```mermaid
 flowchart LR
     subgraph Client_Workspace["1. Corporate Workspace (Slack)"]
@@ -47,6 +54,8 @@ flowchart LR
     ReminderLambda -- "Send Alerts & 24h Reminder" --> AdminChan & User
     ReminderLambda -- "Sync Column U (SENT)" --> GSheets
 ```
+
+</details>
 
 ---
 
