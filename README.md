@@ -13,11 +13,13 @@
 
 ## Architecture Overview
 
-![Smart Travel Assistant - AWS Serverless Architecture](docs/diagrams/smart-travel-assistant/smart-travel-assistant.svg)
+![Smart Travel Assistant - AWS Serverless Architecture](docs/diagrams/smart-travel-assistant/smart-travel-assistant.png)
 
-> **Interactive Architecture Diagram (AWSketch Records Mode):**
-> * Open [smart-travel-assistant.html](docs/diagrams/smart-travel-assistant/smart-travel-assistant.html) in your browser to inspect interactive node details, step-by-step traffic timeline, and component cards.
-> * Architecture provenance tracked via [smart-travel-assistant.sources.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.sources.md) (SHA-256 fingerprints) and [smart-travel-assistant.decisions.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.decisions.md).
+> **Architecture Diagram (AWSketch Records Mode):**
+> * **Interactive Web View:** Open [smart-travel-assistant.html](docs/diagrams/smart-travel-assistant/smart-travel-assistant.html) to interactively inspect node details, step-by-step traffic timeline, and component cards.
+> * **Vector Source:** [smart-travel-assistant.svg](docs/diagrams/smart-travel-assistant/smart-travel-assistant.svg) (Standalone self-contained vector diagram).
+> * **Architecture Records:** Verified via [smart-travel-assistant.sources.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.sources.md) (SHA-256 fingerprints) and [smart-travel-assistant.decisions.md](docs/diagrams/smart-travel-assistant/smart-travel-assistant.decisions.md).
+> * **Visual Verification:** Automated screenshot and pixel validation executed via Playwright Chromium (`npm run test:visual`).
 
 <details>
 <summary><b>Click to expand Text Flowchart (Mermaid)</b></summary>
@@ -306,8 +308,11 @@ Smart Travel Assistant (AWS Serverless Event-Driven)
 The repository includes a comprehensive automated test harness covering Unit, Integration, UI Compliance, and End-to-End simulation tests.
 
 ```bash
-# Run entire test suite (35/35 Passing)
+# Run entire automated functional test suite (35/35 Passing)
 npm test
+
+# Run Playwright headless Chromium visual diagram regression verification
+npm run test:visual
 ```
 
 ### Test Suite Summary
@@ -372,26 +377,15 @@ TOTAL E2E FLOWS: 5 | PASSED: 5 | FAILED: 0
 * **Slack App:** Created at [api.slack.com/apps](https://api.slack.com/apps) with Bot Token & Signing Secret
 * **Google Cloud:** Service Account with Google Sheets API v4 enabled
 
-### 1. Environment Configuration
-Create a `.env` file in the project root (see `.env.example`):
-```ini
-AWS_REGION=ap-southeast-2
-DYNAMODB_TABLE_NAME=TravelBookings
-
-SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
-SLACK_SIGNING_SECRET=your-slack-signing-secret
-SLACK_ADMIN_CHANNEL_ID=C0CGLFPNW7R
-
-OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key
-AI_MODEL=@preset/free-model-stack
-
-GOOGLE_SERVICE_ACCOUNT_FILE=credentials/google-service-account.json
-GOOGLE_SHEET_ID=1bdDs54cT0lADf29fp9HM2D0V5cfleJFj_UmjOnO1im0
-GOOGLE_SHEET_TAB_NAME=Lịch_Trình_Công_Tác
+### 1. Environment Setup
+Copy the provided `.env.example` file to create your local `.env` configuration:
+```bash
+cp .env.example .env
 ```
+Populate `.env` with your credentials as described in `.env.example` (Slack Bot OAuth tokens, Google Service Account JSON credentials, and OpenRouter API keys).
 
 ### 2. Infrastructure Deployment via Terraform
-Deploy all AWS resources (API Gateway, Lambdas, DynamoDB, EventBridge, IAM) with a single command:
+Deploy all AWS serverless resources (API Gateway HTTP v2, Lambdas, DynamoDB, EventBridge, IAM) with a single command:
 ```bash
 cd terraform
 terraform init
@@ -399,11 +393,11 @@ terraform apply -auto-approve
 ```
 
 Terraform outputs the generated API Gateway endpoints to register in your Slack App Console:
-```
-api_gateway_endpoint           = "https://3i098651gg.execute-api.ap-southeast-2.amazonaws.com/"
-slack_events_request_url       = "https://3i098651gg.execute-api.ap-southeast-2.amazonaws.com/slack/events"
-slack_interactions_request_url = "https://3i098651gg.execute-api.ap-southeast-2.amazonaws.com/slack/interactions"
-slack_commands_request_url     = "https://3i098651gg.execute-api.ap-southeast-2.amazonaws.com/slack/commands"
+```text
+api_gateway_endpoint           = "https://<api-gateway-id>.execute-api.ap-southeast-2.amazonaws.com/"
+slack_events_request_url       = "https://<api-gateway-id>.execute-api.ap-southeast-2.amazonaws.com/slack/events"
+slack_interactions_request_url = "https://<api-gateway-id>.execute-api.ap-southeast-2.amazonaws.com/slack/interactions"
+slack_commands_request_url     = "https://<api-gateway-id>.execute-api.ap-southeast-2.amazonaws.com/slack/commands"
 ```
 
 ### 3. Google Sheets Schema Alignment
