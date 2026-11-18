@@ -31,4 +31,16 @@ All architecture routes and components are verified and stamped.
 - Breaks if ignored: Slack error messages (operation_timeout) and duplicated user requests.
 - Rejected: Synchronous processing inside the initial webhook request.
 
+### STA-D4: Stand-in Icons for Slack, OpenRouter and Google Sheets
+- Decision: Use res-chat, res-generic-application, and res-data-table to represent Slack Platform, OpenRouter AI Gateway, and Google Sheets Enterprise.
+- Why: Third-party SaaS and external AI gateways do not have native AWS service icons in the AWS Architecture Icon set, but generic resource icons provide clear visual distinction without implying managed AWS service semantics.
+- Breaks if ignored: Misleading viewers into believing OpenRouter and Google Sheets are native AWS managed services (such as Amazon Bedrock or Amazon RDS).
+- Rejected: Using Amazon Bedrock icon for OpenRouter AI or Amazon RDS for Google Sheets.
+
+### STA-D5: Zero-Collision Orthogonal Gutter Routing
+- Decision: Route cross-column flows exclusively through horizontal and vertical gutters (Gutters H1, H2, H3 and inter-column gutters) rather than drawing direct diagonal or intersecting lines across nodes.
+- Why: Guarantees zero occlusion of intermediate service boxes (API Gateway, DynamoDB, CloudWatch) while maintaining compliance with layout rules.
+- Breaks if ignored: Flow lines obscuring component icons, text labels, and service boundaries.
+- Rejected: Straight direct lines between distant nodes.
+
 ## Open

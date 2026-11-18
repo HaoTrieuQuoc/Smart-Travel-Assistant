@@ -28,9 +28,17 @@ RULES = [
 def read_package(source):
     path = Path(source)
     if path.is_dir():
-        return {p.relative_to(path).as_posix(): p.read_bytes() for p in path.rglob("*.svg")}
+        return {
+            p.relative_to(path).as_posix(): p.read_bytes()
+            for p in path.rglob("*.svg")
+            if "__MACOSX" not in p.parts and not p.name.startswith("._")
+        }
     with zipfile.ZipFile(path) as z:
-        return {n: z.read(n) for n in z.namelist() if n.endswith(".svg") and not n.startswith("__MACOSX")}
+        return {
+            n: z.read(n)
+            for n in z.namelist()
+            if n.endswith(".svg") and not n.startswith("__MACOSX") and "/__MACOSX" not in n and not Path(n).name.startswith("._")
+        }
 
 
 def wrap(icon_id, svg):
@@ -76,7 +84,13 @@ def main(source):
         if not found:
             continue
         kind, icon_id, label, size, category = found
-        svg = files[name].decode("utf-8")
+        try:
+            svg = files[name].decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                svg = files[name].decode("latin-1")
+            except Exception:
+                continue
         if "<style" in svg:
             print("skip (style block): " + name)
             skipped += 1
