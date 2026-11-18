@@ -959,7 +959,7 @@ exports.handler = async (event, context) => {
             arrival_iata: arrIata,
             arrival_city: normalizeCity('', arrIata),
             departure_time: values.dep_time_block?.dep_time_input?.value || '',
-            arrival_time: values.dep_time_block?.dep_time_input?.value || '',
+            arrival_time: values.arr_time_block?.arr_time_input?.value || '',
             pnr: (values.pnr_block?.pnr_input?.value || '').trim().toUpperCase(),
             seat: values.seat_block?.seat_input?.value || '',
             ticket_class: values.class_block?.class_input?.value || 'Economy',
@@ -1024,7 +1024,6 @@ exports.handler = async (event, context) => {
           }
           const bookerHandle = bookerUser?.username || (payload.user?.username ? `@${payload.user.username}` : (payload.user?.name ? `@${payload.user.name}` : `@${passengerEmail.split('@')[0]}`));
 
-          const cityMap = { 'SGN': 'Hồ Chí Minh', 'HAN': 'Hà Nội', 'DAD': 'Đà Nẵng', 'NRT': 'Tokyo', 'SIN': 'Singapore', 'VCA': 'Cần Thơ' };
           const tripData = {
             passenger_name: passengerName,
             passenger_email: bookerUser?.email || passengerEmail,
@@ -1033,9 +1032,9 @@ exports.handler = async (event, context) => {
             airline: airline,
             flight_number: flightNum,
             departure_iata: depIata,
-            departure_city: cityMap[depIata] || depIata,
+            departure_city: normalizeCity('', depIata),
             arrival_iata: arrIata,
-            arrival_city: cityMap[arrIata] || arrIata,
+            arrival_city: normalizeCity('', arrIata),
             departure_time: depTime,
             pnr: pnr,
             ticket_class: 'Economy',
@@ -1173,6 +1172,17 @@ exports.handler = async (event, context) => {
                   initial_value: ticketData.departure_time || ""
                 },
                 label: { type: "plain_text", text: "Thời gian cất cánh (YYYY-MM-DD HH:mm)" }
+              },
+              {
+                type: "input",
+                block_id: "arr_time_block",
+                optional: true,
+                element: {
+                  type: "plain_text_input",
+                  action_id: "arr_time_input",
+                  initial_value: ticketData.arrival_time || ""
+                },
+                label: { type: "plain_text", text: "Thời gian hạ cánh (YYYY-MM-DD HH:mm)" }
               },
               {
                 type: "input",
@@ -1387,4 +1397,18 @@ exports.handler = async (event, context) => {
   }
 
   return { statusCode: 404, body: 'Not Found' };
+};
+
+module.exports = {
+  handler: exports.handler,
+  verifySlackSignature,
+  CITY_MAP,
+  toTitleCase,
+  normalizeCity,
+  formatPassengerName,
+  normalizeTicketData,
+  buildTicketPreviewCard,
+  saveTripRecord,
+  updateGoogleSheetAndDynamoTrip,
+  handleSlackEvent
 };

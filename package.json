@@ -4,6 +4,9 @@
   "description": "Enterprise Corporate Travel Automation Platform on AWS Serverless and Generative AI",
   "main": "lambda/slack_handler.js",
   "scripts": {
+    "test": "node tests/comprehensive_tester.js && node tests/e2e_simulation_test.js",
+    "test:unit": "node tests/comprehensive_tester.js",
+    "test:e2e": "node tests/e2e_simulation_test.js",
     "test:pr": "node scripts/test_ai_pr.js",
     "init:sheets": "node scripts/init_and_test.js",
     "sync:audit": "node scripts/sync_and_audit.js",
