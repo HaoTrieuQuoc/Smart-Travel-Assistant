@@ -686,21 +686,33 @@ async function handleSlackEvent(event) {
         ...rawCorrected
       });
 
-      // Lưu lại bản nháp mới vào DynamoDB
+      // Gửi lại thẻ thông tin cập nhật
+      const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicketData, true, true);
+      const postRes = await postSlackMessage(channelId, updatedCard);
+      const newMsgTs = postRes?.data?.ts || postRes?.ts;
+
+      // Lưu lại bản nháp mới vào DynamoDB kèm message_ts
       await docClient.send(new PutCommand({
         TableName: DYNAMODB_TABLE,
         Item: {
           trip_id: `DRAFT#${channelId}`,
           channel_id: channelId,
           thread_ts: threadTs,
+          message_ts: newMsgTs,
           ticket_data: updatedTicketData,
           created_at: new Date().toISOString()
         }
       }));
 
-      // Gửi lại thẻ thông tin cập nhật
-      const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicketData, true);
-      await postSlackMessage(channelId, updatedCard);
+      // Vô hiệu hóa nút bấm ở tin nhắn trước đó nếu có
+      if (currentDraft?.message_ts && currentDraft.message_ts !== newMsgTs) {
+        try {
+          const disabledOldCard = buildTicketPreviewCard(channelId, threadTs, currentDraft.ticket_data || updatedTicketData, false, false);
+          await updateSlackMessage(channelId, currentDraft.message_ts, disabledOldCard.blocks);
+        } catch (err) {
+          console.error(`Error removing action buttons on old message ${currentDraft.message_ts}:`, err);
+        }
+      }
       return;
     } catch (err) {
       console.error('Error applying correction:', err);

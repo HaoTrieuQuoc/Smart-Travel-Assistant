@@ -253,13 +253,18 @@ async function updateSlackMessage(channel, ts, textOrBlocks) {
     Object.assign(payload, textOrBlocks);
   }
 
-  return makeRequest('https://slack.com/api/chat.update', {
+  const res = await makeRequest('https://slack.com/api/chat.update', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${slackToken}`,
       'Content-Type': 'application/json; charset=utf-8'
     }
   }, payload);
+
+  if (res.data && !res.data.ok) {
+    console.error(`Slack chat.update failed for ts ${ts} in channel ${channel}:`, res.data.error);
+  }
+  return res;
 }
 
 module.exports = {
