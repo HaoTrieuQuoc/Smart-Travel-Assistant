@@ -24,6 +24,7 @@ const {
   getRecentChannelFiles,
   getSlackUserInfo,
   postSlackMessage,
+  updateSlackMessage,
   invokeLambdaAsync
 } = require('./common');
 
@@ -322,7 +323,7 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
 }
 
 // Xây dựng giao diện thẻ xem trước kết quả bóc tách vé máy bay (Ticket Preview Card)
-function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = false) {
+function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = false, hasActions = true) {
   const ticketInfo = normalizeTicketData(rawTicketInfo);
   const title = isUpdated
     ? "KẾT QUẢ ĐỌC VÉ MÁY BAY (ĐÃ CẬP NHẬT)"
@@ -336,57 +337,58 @@ function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = 
     ? `${Number(ticketInfo.ticket_price).toLocaleString('vi-VN')} VND`
     : 'Chưa rõ';
 
-  return {
-    channel: channelId,
-    thread_ts: threadTs,
-    blocks: [
-      {
-        type: "header",
-        text: { type: "plain_text", text: title, emoji: false }
-      },
-      {
-        type: "section",
-        text: { type: "mrkdwn", text: introText }
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*THÔNG TIN TRÍCH XUẤT TỪ VÉ MÁY BAY*"
-        }
-      },
-      {
-        type: "section",
-        fields: [
-          { type: "mrkdwn", text: `*Hành khách:*\n${ticketInfo.passenger_name || 'N/A'}` },
-          { type: "mrkdwn", text: `*Hãng hàng không:*\n${ticketInfo.airline || 'Vietnam Airlines'}` },
-          { type: "mrkdwn", text: `*Số hiệu chuyến bay:*\n${ticketInfo.flight_number || 'N/A'}` },
-          { type: "mrkdwn", text: `*Mã đặt chỗ (PNR):*\n${ticketInfo.pnr || 'N/A'}` },
-          { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_city} (${ticketInfo.departure_iata}) ➔ ${ticketInfo.arrival_city} (${ticketInfo.arrival_iata})` },
-          { type: "mrkdwn", text: `*Giờ cất cánh:*\n${ticketInfo.departure_time || 'N/A'}` },
-          { type: "mrkdwn", text: `*Hạng vé / Ghế:*\n${ticketInfo.ticket_class}${ticketInfo.seat ? ` (Ghế ${ticketInfo.seat})` : ''}` },
-          { type: "mrkdwn", text: `*Giá vé:*\n${priceDisplay}` }
-        ]
-      },
-      {
-        type: "divider"
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*THÔNG TIN HỒ SƠ CÔNG TÁC (MẶC ĐỊNH HỆ THỐNG)*"
-        }
-      },
-      {
-        type: "section",
-        fields: [
-          { type: "mrkdwn", text: `*Phòng ban:*\n${ticketInfo.department || 'Nhân sự / Quản lý'}` },
-          { type: "mrkdwn", text: `*Mục đích công tác:*\n${ticketInfo.purpose || 'Công tác nội bộ'}` },
-          { type: "mrkdwn", text: `*Phương thức thanh toán:*\n${ticketInfo.payment_method || 'Corporate Card'}` },
-          { type: "mrkdwn", text: `*Tài khoản đặt lịch:*\n${ticketInfo.slack_username || '@user'} (${ticketInfo.passenger_email || 'user@company.com'})` }
-        ]
-      },
+  const blocks = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: title, emoji: false }
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: introText }
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*THÔNG TIN TRÍCH XUẤT TỪ VÉ MÁY BAY*"
+      }
+    },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*Hành khách:*\n${ticketInfo.passenger_name || 'N/A'}` },
+        { type: "mrkdwn", text: `*Hãng hàng không:*\n${ticketInfo.airline || 'Vietnam Airlines'}` },
+        { type: "mrkdwn", text: `*Số hiệu chuyến bay:*\n${ticketInfo.flight_number || 'N/A'}` },
+        { type: "mrkdwn", text: `*Mã đặt chỗ (PNR):*\n${ticketInfo.pnr || 'N/A'}` },
+        { type: "mrkdwn", text: `*Lộ trình:*\n${ticketInfo.departure_city} (${ticketInfo.departure_iata}) ➔ ${ticketInfo.arrival_city} (${ticketInfo.arrival_iata})` },
+        { type: "mrkdwn", text: `*Giờ cất cánh:*\n${ticketInfo.departure_time || 'N/A'}` },
+        { type: "mrkdwn", text: `*Hạng vé / Ghế:*\n${ticketInfo.ticket_class}${ticketInfo.seat ? ` (Ghế ${ticketInfo.seat})` : ''}` },
+        { type: "mrkdwn", text: `*Giá vé:*\n${priceDisplay}` }
+      ]
+    },
+    {
+      type: "divider"
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*THÔNG TIN HỒ SƠ CÔNG TÁC (MẶC ĐỊNH HỆ THỐNG)*"
+      }
+    },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*Phòng ban:*\n${ticketInfo.department || 'Nhân sự / Quản lý'}` },
+        { type: "mrkdwn", text: `*Mục đích công tác:*\n${ticketInfo.purpose || 'Công tác nội bộ'}` },
+        { type: "mrkdwn", text: `*Phương thức thanh toán:*\n${ticketInfo.payment_method || 'Corporate Card'}` },
+        { type: "mrkdwn", text: `*Tài khoản đặt lịch:*\n${ticketInfo.slack_username || '@user'} (${ticketInfo.passenger_email || 'user@company.com'})` }
+      ]
+    }
+  ];
+
+  if (hasActions) {
+    blocks.push(
       {
         type: "section",
         text: {
@@ -418,7 +420,25 @@ function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = 
           }
         ]
       }
-    ]
+    );
+  } else {
+    blocks.push(
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "_Thông tin vé này đã được cập nhật ở tin nhắn mới nhất bên dưới._"
+          }
+        ]
+      }
+    );
+  }
+
+  return {
+    channel: channelId,
+    thread_ts: threadTs,
+    blocks
   };
 }
 
@@ -511,21 +531,23 @@ async function handleSlackEvent(event) {
       // Chuẩn hóa toàn bộ dữ liệu theo quy chuẩn đồng bộ
       const ticketInfo = normalizeTicketData(rawTicketInfo);
 
-      // Lưu bản nháp (Draft) vào DynamoDB để hỗ trợ chỉnh sửa
+      // Gửi thẻ xem trước
+      const card = buildTicketPreviewCard(channelId, threadTs, ticketInfo, false, true);
+      const postRes = await postSlackMessage(channelId, card);
+      const postedMsgTs = postRes?.data?.ts || postRes?.ts;
+
+      // Lưu bản nháp (Draft) vào DynamoDB kèm message_ts để hỗ trợ quản lý nút bấm khi chỉnh sửa
       await docClient.send(new PutCommand({
         TableName: DYNAMODB_TABLE,
         Item: {
           trip_id: `DRAFT#${channelId}`,
           channel_id: channelId,
           thread_ts: threadTs,
+          message_ts: postedMsgTs,
           ticket_data: ticketInfo,
           created_at: new Date().toISOString()
         }
       }));
-
-      // Gửi thẻ xem trước
-      const card = buildTicketPreviewCard(channelId, threadTs, ticketInfo, false);
-      await postSlackMessage(channelId, card);
     } catch (err) {
       console.error('OCR Error:', err);
       await postSlackMessage(channelId, {
@@ -929,6 +951,7 @@ exports.handler = async (event, context) => {
           const meta = JSON.parse(payload.view.private_metadata || '{}');
           const channelId = meta.channel_id;
           const threadTs = meta.thread_ts;
+          const oldMessageTs = meta.message_ts;
 
           const depIata = (values.dep_iata_block?.dep_iata_input?.value || '').trim().toUpperCase();
           const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
@@ -969,22 +992,55 @@ exports.handler = async (event, context) => {
             payment_method: values.payment_method_block?.payment_method_input?.value || 'Corporate Card'
           });
 
-          // Lưu bản nháp vào DynamoDB
+          // Lưu bản nháp vào DynamoDB và cập nhật tin nhắn
           if (channelId) {
+            let currentDraft = null;
+            try {
+              const draftRes = await docClient.send(new GetCommand({
+                TableName: DYNAMODB_TABLE,
+                Key: { trip_id: `DRAFT#${channelId}` }
+              }));
+              currentDraft = draftRes.Item;
+            } catch (e) {}
+
+            // 1. Gửi thẻ xem trước đã cập nhật vào kênh (thẻ mới nhất có đầy đủ nút thao tác)
+            let newMsgTs = null;
+            try {
+              const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicket, true, true);
+              const postRes = await postSlackMessage(channelId, updatedCard);
+              newMsgTs = postRes?.data?.ts || postRes?.ts;
+            } catch (err) {
+              console.error('Error posting updated preview card:', err);
+            }
+
+            // 2. Lưu bản nháp mới vào DynamoDB kèm newMsgTs
             await docClient.send(new PutCommand({
               TableName: DYNAMODB_TABLE,
               Item: {
                 trip_id: `DRAFT#${channelId}`,
                 channel_id: channelId,
                 thread_ts: threadTs,
+                message_ts: newMsgTs,
                 ticket_data: updatedTicket,
                 created_at: new Date().toISOString()
               }
             }));
 
-            // Gửi thẻ xem trước đã cập nhật vào kênh
-            const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicket, true);
-            postSlackMessage(channelId, updatedCard).catch(console.error);
+            // 3. Cập nhật tin nhắn cũ: Gỡ bỏ toàn bộ các nút [Xác nhận], [Chỉnh sửa], [Hủy bỏ]
+            const oldTimestamps = new Set();
+            if (oldMessageTs) oldTimestamps.add(oldMessageTs);
+            if (currentDraft?.message_ts) oldTimestamps.add(currentDraft.message_ts);
+            if (newMsgTs) oldTimestamps.delete(newMsgTs);
+
+            for (const ts of oldTimestamps) {
+              try {
+                const previousTicket = currentDraft?.ticket_data || updatedTicket;
+                const disabledOldCard = buildTicketPreviewCard(channelId, threadTs, previousTicket, false, false);
+                await updateSlackMessage(channelId, ts, disabledOldCard.blocks);
+              } catch (err) {
+                console.error(`Error removing action buttons on old message ${ts}:`, err);
+              }
+            }
           }
 
           // Trả về đóng modal ngay lập tức
@@ -1081,6 +1137,7 @@ exports.handler = async (event, context) => {
         if (action?.action_id === 'open_edit_ticket_modal') {
           const triggerId = payload.trigger_id;
           const threadTs = payload.message?.thread_ts || payload.message?.ts;
+          const messageTs = payload.message?.ts || payload.container?.message_ts;
 
           let ticketData = null;
           if (channelId) {
@@ -1110,7 +1167,8 @@ exports.handler = async (event, context) => {
             close: { type: "plain_text", text: "Hủy" },
             private_metadata: JSON.stringify({
               channel_id: channelId,
-              thread_ts: threadTs
+              thread_ts: threadTs,
+              message_ts: messageTs
             }),
             blocks: [
               {
@@ -1343,6 +1401,15 @@ exports.handler = async (event, context) => {
 
             if (channelId) {
               try {
+                const draftRes = await docClient.send(new GetCommand({
+                  TableName: DYNAMODB_TABLE,
+                  Key: { trip_id: `DRAFT#${channelId}` }
+                }));
+                const draftMsgTs = draftRes.Item?.message_ts;
+                if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
+                  const disabledCard = buildTicketPreviewCard(channelId, null, draftRes.Item?.ticket_data || ticketData, false, false);
+                  await updateSlackMessage(channelId, draftMsgTs, disabledCard.blocks).catch(() => {});
+                }
                 await docClient.send(new DeleteCommand({
                   TableName: DYNAMODB_TABLE,
                   Key: { trip_id: `DRAFT#${channelId}` }
@@ -1366,6 +1433,15 @@ exports.handler = async (event, context) => {
         } else if (action?.action_id === 'cancel_ticket') {
           if (channelId) {
             try {
+              const draftRes = await docClient.send(new GetCommand({
+                TableName: DYNAMODB_TABLE,
+                Key: { trip_id: `DRAFT#${channelId}` }
+              }));
+              const draftMsgTs = draftRes.Item?.message_ts;
+              if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
+                const disabledCard = buildTicketPreviewCard(channelId, null, draftRes.Item?.ticket_data || {}, false, false);
+                await updateSlackMessage(channelId, draftMsgTs, disabledCard.blocks).catch(() => {});
+              }
               await docClient.send(new DeleteCommand({
                 TableName: DYNAMODB_TABLE,
                 Key: { trip_id: `DRAFT#${channelId}` }

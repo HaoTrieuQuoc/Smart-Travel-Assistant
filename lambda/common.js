@@ -235,6 +235,33 @@ async function postSlackMessage(channel, textOrBlocks) {
   }, payload);
 }
 
+// Update an existing Slack Message (chat.update)
+async function updateSlackMessage(channel, ts, textOrBlocks) {
+  const slackToken = process.env.SLACK_BOT_TOKEN;
+  const payload = {
+    channel: channel,
+    ts: ts
+  };
+
+  if (typeof textOrBlocks === 'string') {
+    payload.text = textOrBlocks;
+    payload.blocks = [];
+  } else if (Array.isArray(textOrBlocks)) {
+    payload.blocks = textOrBlocks;
+    payload.text = 'Notification from Smart Travel Assistant';
+  } else if (textOrBlocks && typeof textOrBlocks === 'object') {
+    Object.assign(payload, textOrBlocks);
+  }
+
+  return makeRequest('https://slack.com/api/chat.update', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${slackToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  }, payload);
+}
+
 module.exports = {
   docClient,
   PutCommand,
@@ -250,6 +277,7 @@ module.exports = {
   getRecentChannelFiles,
   getSlackUserInfo,
   postSlackMessage,
+  updateSlackMessage,
   invokeLambdaAsync
 };
 

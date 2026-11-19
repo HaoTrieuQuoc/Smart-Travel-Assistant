@@ -439,6 +439,23 @@ try {
   recordTest('TC-UI-05', 'UI/UX Compliance', 'Updated card test exception', 'FAIL', e.message);
 }
 
+try {
+  // TC-UI-06: Disabled Action Buttons on Superseded/Older Message (hasActions = false)
+  const disabledCard = buildTicketPreviewCard('C01', '1', {}, false, false);
+  const jsonDisabled = JSON.stringify(disabledCard);
+  const actionsBlock = disabledCard.blocks.find(b => b.type === 'actions');
+  const hasSupersededNote = jsonDisabled.includes('Thông tin vé này đã được cập nhật ở tin nhắn mới nhất bên dưới.');
+  const { updateSlackMessage } = require('../lambda/common');
+
+  if (!actionsBlock && hasSupersededNote && typeof updateSlackMessage === 'function') {
+    recordTest('TC-UI-06', 'UI/UX Compliance', 'Superseded card disables action buttons and updateSlackMessage is exported', 'PASS');
+  } else {
+    recordTest('TC-UI-06', 'UI/UX Compliance', `Disabled card validation failed: actionsPresent=${!!actionsBlock}, hasNote=${hasSupersededNote}`, 'FAIL');
+  }
+} catch (e) {
+  recordTest('TC-UI-06', 'UI/UX Compliance', 'Disabled card test exception', 'FAIL', e.message);
+}
+
 // ============================================================================
 // 4. FEATURE 4: GOOGLE SHEETS 23-COLUMN SCHEMA & PERSISTENCE
 // ============================================================================

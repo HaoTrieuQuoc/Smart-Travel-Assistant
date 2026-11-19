@@ -79,18 +79,26 @@ const https = require('https');
 const EventEmitter = require('events');
 
 // Mock all outbound HTTPS requests
+const outboundCalls = [];
 const origHttpsRequest = https.request;
 https.request = function(options, callback) {
+  let postBody = '';
   const req = new EventEmitter();
-  req.write = () => {};
+  req.write = (chunk) => { if (chunk) postBody += chunk.toString(); };
   req.end = () => {
+    const url = typeof options === 'string' ? options : (options.href || options.path || '');
+    outboundCalls.push({ url, body: postBody });
     if (callback) {
       const res = new EventEmitter();
       res.statusCode = 200;
       res.headers = { 'content-type': 'application/json' };
       process.nextTick(() => {
         if (callback) callback(res);
-        res.emit('data', JSON.stringify({ ok: true, user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } } }));
+        res.emit('data', JSON.stringify({
+          ok: true,
+          ts: '1700000000.000200',
+          user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
+        }));
         res.emit('end');
       });
     }
@@ -200,7 +208,7 @@ async function runE2E() {
       user: { id: 'U123456', username: 'quoc_hao' },
       view: {
         callback_id: 'edit_ticket_modal_submit',
-        private_metadata: JSON.stringify({ channel_id: channelId, thread_ts: threadTs }),
+        private_metadata: JSON.stringify({ channel_id: channelId, thread_ts: threadTs, message_ts: '1700000000.000100' }),
         state: {
           values: {
             name_block: { name_input: { value: 'Hussin Norhilman' } },
@@ -229,8 +237,11 @@ async function runE2E() {
     }, {});
 
     const updatedDraft = dbStore.get(`DRAFT#${channelId}`);
+    const updateCallMade = outboundCalls.some(call => call.url.includes('chat.update'));
     const pass = res.statusCode === 200 &&
       updatedDraft &&
+      updatedDraft.message_ts === '1700000000.000200' &&
+      updateCallMade &&
       updatedDraft.ticket_data.ticket_price === '3500000' &&
       updatedDraft.ticket_data.ticket_class === 'Business' &&
       updatedDraft.ticket_data.seat === '14A' &&
@@ -239,9 +250,9 @@ async function runE2E() {
       updatedDraft.ticket_data.purpose === 'Họp Hội Đồng Quản Trị' &&
       updatedDraft.ticket_data.department === 'Ban Giám Đốc';
 
-    recordE2E('E2E-FLOW-03', 'Modal View Submission & Draft Update', pass);
+    recordE2E('E2E-FLOW-03', 'Modal View Submission & Draft Update (Disables Old Buttons)', pass);
   } catch (e) {
-    recordE2E('E2E-FLOW-03', 'Modal View Submission & Draft Update', false, e.message);
+    recordE2E('E2E-FLOW-03', 'Modal View Submission & Draft Update (Disables Old Buttons)', false, e.message);
   }
 
   // --------------------------------------------------------------------------
