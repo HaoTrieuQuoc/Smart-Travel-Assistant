@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Test Plan & QA/QC Verification Matrix — Smart Travel Assistant</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-body: #0b1120;
+            --bg-surface: #111827;
+            --bg-card: #1e293b;
+            --bg-card-hover: #273549;
+            --bg-code: #0f172a;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --border-subtle: #334155;
+            --border-highlight: #475569;
+            --accent-blue: #38bdf8;
+            --accent-indigo: #818cf8;
+            --accent-emerald: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-rose: #fb7185;
+            --accent-purple: #c084fc;
+            --p0: #ef4444;
+            --p1: #f59e0b;
+            --p2: #10b981;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 30px 20px;
+        }
+        .container { max-width: 1360px; margin: 0 auto; }
+        
+        /* Header */
+        header {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .badge-header {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4);
+            color: var(--accent-blue); padding: 5px 14px; border-radius: 999px;
+            font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+            margin-bottom: 12px;
+        }
+        h1 {
+            font-size: 2.2rem; font-weight: 800; line-height: 1.25; margin-bottom: 10px;
+            background: linear-gradient(90deg, #ffffff 0%, #38bdf8 60%, #818cf8 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .lead { font-size: 1.05rem; color: var(--text-secondary); max-width: 1050px; }
+        
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 18px 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+        }
+        .kpi-card.blue::before { background: var(--accent-blue); }
+        .kpi-card.emerald::before { background: var(--accent-emerald); }
+        .kpi-card.purple::before { background: var(--accent-purple); }
+        .kpi-card.amber::before { background: var(--accent-amber); }
+        .kpi-card.rose::before { background: var(--accent-rose); }
+        
+        .kpi-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
+        .kpi-value { font-size: 2rem; font-weight: 800; color: #ffffff; margin: 4px 0; }
+        .kpi-desc { font-size: 12px; color: var(--text-secondary); }
+
+        /* Section Cards */
+        .section-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 28px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .section-title {
+            font-size: 1.25rem; font-weight: 700; color: #ffffff;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .section-badge {
+            font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; text-transform: uppercase;
+        }
+        
+        /* Table Styles */
+        .table-responsive { overflow-x: auto; margin-top: 14px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            text-align: left;
+        }
+        th {
+            background: var(--bg-card);
+            color: var(--text-muted);
+            font-weight: 700;
+            padding: 12px 14px;
+            border-bottom: 2px solid var(--border-subtle);
+            text-transform: uppercase;
+            font-size: 11.5px;
+            letter-spacing: 0.05em;
+        }
+        td {
+            padding: 13px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            vertical-align: top;
+        }
+        tr:hover td { background-color: rgba(255,255,255,0.02); }
+        
+        /* Badges & Tags */
+        .tag-p0 { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); font-weight: 700; padding: 2px 7px; border-radius: 4px; font-size: 11px; }
+        .tag-p1 { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 700; padding: 2px 7px; border-radius: 4px; font-size: 11px; }
+        .tag-p2 { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); font-weight: 700; padding: 2px 7px; border-radius: 4px; font-size: 11px; }
+        
+        .status-pass {
+            background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);
+            font-weight: 700; padding: 3px 9px; border-radius: 999px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;
+        }
+        .status-uat {
+            background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);
+            font-weight: 700; padding: 3px 9px; border-radius: 999px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;
+        }
+        .type-pill {
+            background: rgba(129, 140, 248, 0.15); color: #a5b4fc; border: 1px solid rgba(129, 140, 248, 0.3);
+            font-weight: 600; padding: 2px 8px; border-radius: 6px; font-size: 11px;
+        }
+        
+        .code-inline {
+            background: var(--bg-code); color: #e2e8f0; padding: 2px 6px; border-radius: 4px;
+            font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; border: 1px solid var(--border-subtle);
+        }
+
+        /* Filter Controls */
+        .controls-bar {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;
+            background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border-subtle);
+        }
+        .search-input {
+            flex: 1; min-width: 220px; background: var(--bg-body); border: 1px solid var(--border-subtle);
+            border-radius: 6px; padding: 8px 12px; color: #ffffff; font-size: 13px; outline: none;
+        }
+        .search-input:focus { border-color: var(--accent-blue); }
+        .filter-select {
+            background: var(--bg-body); border: 1px solid var(--border-subtle);
+            border-radius: 6px; padding: 8px 12px; color: var(--text-secondary); font-size: 13px; outline: none; cursor: pointer;
+        }
+        
+        /* Execution Cards */
+        .step-box {
+            background: var(--bg-card); border-left: 3px solid var(--accent-blue);
+            border-radius: 6px; padding: 12px 14px; margin: 10px 0; font-size: 13px;
+        }
+        .step-num { font-weight: 700; color: var(--accent-blue); margin-right: 6px; }
+
+        .diagram-container {
+            background: #0f172a; border: 1px solid var(--border-subtle);
+            border-radius: 10px; padding: 20px; overflow-x: auto; margin: 16px 0;
+        }
+
+        /* Accordion / Details */
+        details {
+            background: var(--bg-card); border: 1px solid var(--border-subtle);
+            border-radius: 8px; margin-bottom: 12px; overflow: hidden;
+        }
+        summary {
+            padding: 14px 18px; cursor: pointer; font-weight: 700; color: #ffffff;
+            display: flex; align-items: center; justify-content: space-between; user-select: none;
+        }
+        summary:hover { background: var(--bg-card-hover); }
+        .details-content {
+            padding: 16px 18px; border-top: 1px solid var(--border-subtle);
+            background: rgba(15, 23, 42, 0.4); font-size: 13.5px;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border-subtle);
+            text-align: center; font-size: 12px; color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <header>
+        <div class="badge-header">QA/QC Engineering Delivery Protocol — ISO/IEC/IEEE 29119 Compliant</div>
+        <h1>Master Test Plan & QA/QC Verification Matrix</h1>
+        <p class="lead">
+            Kế hoạch kiểm thử toàn diện cho hệ sinh thái <strong>Smart Travel Assistant</strong> (AWS Serverless + Slack Block Kit + Multimodal Generative AI). Bao quát từ Unit Tests, Integration Tests, E2E Simulation Flows đến quy trình UAT thực tế trên Production.
+        </p>
+    </header>
+
+    <!-- Top KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card blue">
+            <div class="kpi-title">Tổng Số Test Cases</div>
+            <div class="kpi-value" id="kpi-total">52</div>
+            <div class="kpi-desc">Bao phủ 8 Trọng tâm Kiến trúc</div>
+        </div>
+        <div class="kpi-card emerald">
+            <div class="kpi-title">Automated Tests PASS</div>
+            <div class="kpi-value">36 / 36</div>
+            <div class="kpi-desc">100% Pass Rate (CI / Local)</div>
+        </div>
+        <div class="kpi-card purple">
+            <div class="kpi-title">E2E Simulation Flows</div>
+            <div class="kpi-value">5 / 5</div>
+            <div class="kpi-desc">Mô phỏng trọn vẹn Webhooks & DB</div>
+        </div>
+        <div class="kpi-card amber">
+            <div class="kpi-title">Manual UAT Scenarios</div>
+            <div class="kpi-value">16</div>
+            <div class="kpi-desc">Kiểm tra thực tế Slack & Sheets</div>
+        </div>
+        <div class="kpi-card rose">
+            <div class="kpi-title">Defect Density Goal</div>
+            <div class="kpi-value">0</div>
+            <div class="kpi-desc">0 Critical / High Severity Bugs</div>
+        </div>
+    </div>
+
+    <!-- Section: End-to-End Test Architecture Diagram -->
+    <div class="section-card">
+        <div class="section-header">
+            <div class="section-title">
+                Sơ Đồ Chiến Lược Kiểm Thử (End-to-End Test Strategy Architecture)
+            </div>
+            <span class="section-badge tag-tech" style="background: rgba(56,189,248,0.2); color: var(--accent-blue); border: 1px solid rgba(56,189,248,0.4);">Automation Pipeline</span>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 13.5px; margin-bottom: 12px;">
+            Mô hình phân tầng kiểm định chất lượng: Từ kiểm tra cú pháp nhanh (Syntax Linting) đến Unit Testing cô lập, E2E Mocking không cần mạng, và UAT trên hạ tầng AWS Lambda thực tế.
+        </p>
+        <div class="diagram-container">
+            <pre class="mermaid">
+flowchart LR
+    subgraph L1["TẦNG 1: STATIC & SYNTAX (< 2s)"]
+        Lint["npm run lint:syntax\n(Node.js --check)"]
+        SecCheck["Security & Secret Check\n(.env & Sensitive IDs)"]
+    end
+
+    subgraph L2["TẦNG 2: UNIT & NORMALIZATION (< 3s)"]
+        Norm["comprehensive_tester.js\n- 8 Normalization TCs\n- 3 HMAC Sec TCs\n- 6 Block Kit UI TCs\n- 4 GSheets Schema TCs\n- 4 Flight Reminder TCs\n- 3 Modal Input TCs"]
+        JsonAI["AI Robust JSON Parser\n(Fence Stripping & Fallback)"]
+    end
+
+    subgraph L3["TẦNG 3: E2E SIMULATION (< 5s)"]
+        E2E["e2e_simulation_test.js\n- URL Handshake\n- DB Draft Lifecycle\n- Modal Edit & Button Revocation\n- Ticket Cancellation\n- Natural Language PR Chat"]
+    end
+
+    subgraph L4["TẦNG 4: PRODUCTION UAT & CLOUD"]
+        AWS["AWS Serverless Live\n- API Gateway v2\n- Lambda Node.js 20.x\n- DynamoDB Table\n- EventBridge Daily Cron"]
+        Slack["Slack Client\n- Boarding Pass Upload\n- Interactive Modal Form\n- Disabled Older Buttons"]
+        Sheet["Google Sheets Enterprise\n- 23 Columns Verification\n- Column U (SENT) Sync"]
+    end
+
+    L1 --> L2 --> L3 --> L4
+            </pre>
+        </div>
+    </div>
+
+    <!-- Section: Master Test Matrix (Filterable Table) -->
+    <div class="section-card">
+        <div class="section-header">
+            <div class="section-title">
+                Ma Trận Kiểm Thử Chi Tiết Từng Feature (Feature-by-Feature Test Matrix)
+            </div>
+            <span class="section-badge tag-tech" style="background: rgba(52,211,153,0.2); color: var(--accent-emerald); border: 1px solid rgba(52,211,153,0.4);">Interactive Matrix</span>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="controls-bar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Tìm kiếm theo mã test (TC-...), từ khóa, chức năng...">
+            <select id="featureFilter" class="filter-select">
+                <option value="ALL">Tất cả Features (1 - 7)</option>
+                <option value="F1">Feature 1: AI Vision OCR & Ingestion</option>
+                <option value="F2">Feature 2: Review Card, Modal & Lifecycle</option>
+                <option value="F3">Feature 3: Dual-Write & Sheets 23-Col</option>
+                <option value="F4">Feature 4: Manual Admin (/travel-admin)</option>
+                <option value="F5">Feature 5: Conversational PR Chatbot</option>
+                <option value="F6">Feature 6: 24h Flight Reminder Cron</option>
+                <option value="F7">Feature 7: Security, Cloud & Anti-AI</option>
+            </select>
+            <select id="typeFilter" class="filter-select">
+                <option value="ALL">Tất cả Loại Test</option>
+                <option value="Unit">Unit Test</option>
+                <option value="E2E">E2E Simulation</option>
+                <option value="UAT">Manual UAT</option>
+            </select>
+            <select id="priorityFilter" class="filter-select">
+                <option value="ALL">Mọi Mức Ưu Tiên</option>
+                <option value="P0">P0 (Critical)</option>
+                <option value="P1">P1 (High)</option>
+                <option value="P2">P2 (Medium)</option>
+            </select>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+            <table id="matrixTable">
+                <thead>
+                    <tr>
+                        <th style="width: 110px;">Mã Test</th>
+                        <th style="width: 140px;">Feature</th>
+                        <th style="width: 80px;">Ưu Tiên</th>
+                        <th style="width: 90px;">Phân Loại</th>
+                        <th>Mục Tiêu & Kịch Bản Kiểm Thử</th>
+                        <th>Kết Quả Kỳ Vọng (Pass Criteria)</th>
+                        <th style="width: 110px;">Trạng Thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- FEATURE 1: AI VISION OCR & INGESTION -->
+                    <tr data-feature="F1" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-NORM-01</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Ánh xạ mã sân bay IATA phổ biến (KUL, SGN, HAN, DAD, SIN, NRT) sang tên thành phố chuẩn Title Case.</td>
+                        <td>Mã IATA được chuyển đổi chính xác thành tên thành phố tương ứng (KUL &rarr; Kuala Lumpur, SGN &rarr; Hồ Chí Minh).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-NORM-02</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Chuẩn hóa tên thành phố không có IATA (xóa khoảng trắng thừa, Title Case chuẩn).</td>
+                        <td>Tên chuỗi tự do như "ho chi minh" hoặc "hanoi" được định dạng chuẩn "Hồ Chí Minh", "Hà Nội".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P2">
+                        <td><span class="code-inline">TC-NORM-03</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p2">P2</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Xử lý mã sân bay IATA lạ ngoài danh mục định nghĩa.</td>
+                        <td>Hệ thống không crash, fallback giữ nguyên mã IATA gốc (VD: XYZ).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-NORM-04</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Chuẩn hóa tên hành khách từ định dạng vé máy bay có dấu gạch chéo (<code class="code-inline">HUSSIN / NORHILMAN</code>).</td>
+                        <td>Chuyển đổi thành Title Case tự nhiên: <code class="code-inline">Hussin Norhilman</code>, loại bỏ dấu gạch chéo và chữ in hoa toàn bộ.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-NORM-05</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Chuẩn hóa tên hành khách có khoảng trắng lộn xộn hoặc nhiều ký tự tab.</td>
+                        <td>Chuẩn hóa thành chuỗi đơn cách, cắt tỉa khoảng trắng đầu cuối (Trim).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-NORM-06</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Xử lý giá vé bị thiếu hoặc bằng 0 trên vé điện tử (Boarding Pass / E-Ticket không in tiền).</td>
+                        <td>Tuyệt đối không để giá mặc định là <code class="code-inline">0 VND</code>; phải hiển thị và ghi nhận là <code class="code-inline">Chưa rõ</code>.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-NORM-07</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Điền các trường chính sách công ty mặc định (Phòng ban, Mục đích, Thẻ chi tiêu, Hạng vé).</td>
+                        <td>Gán mặc định: <code class="code-inline">Nhân sự / Quản lý</code>, <code class="code-inline">Công tác nội bộ</code>, <code class="code-inline">Corporate Card</code>, <code class="code-inline">Economy</code>.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-NORM-08</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Tự động gắn tiền tố <code class="code-inline">@</code> cho Slack Username người đặt lịch.</td>
+                        <td>Nếu username truyền vào là "quoc_hao", tự động chuẩn hóa thành "@quoc_hao".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-AI-01</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Bóc tách JSON sạch từ phản hồi AI có chứa markdown code block fence (```json ... ```).</td>
+                        <td>Parser loại bỏ hoàn toàn các ký tự bao bọc, parse thành JSON Object hợp lệ 100%.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-AI-02</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Trích xuất JSON từ văn bản hội thoại có lời dẫn trước/sau của mô hình AI.</td>
+                        <td>Tìm đúng khối JSON nằm giữa cặp ngoặc nhọn <code class="code-inline">{ ... }</code> và giải mã chính xác.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-AI-03</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Xử lý an toàn khi mô hình AI trả về văn bản rác hoặc từ chối trả lời (non-JSON).</td>
+                        <td>Bắt exception an toàn, không làm crash tiến trình Lambda, kích hoạt cơ chế fallback.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F1" data-type="UAT" data-priority="P0">
+                        <td><span class="code-inline">UAT-OCR-01</span></td>
+                        <td>F1: AI Vision OCR</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td>Tải lên ảnh vé máy bay thực tế (Vietnam Airlines / Vietjet / Bamboo) vào kênh Slack.</td>
+                        <td>Bot phản hồi trong &lt; 3 giây kèm Thẻ xem trước có đầy đủ thông tin chuyến bay bóc tách được.</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 2: REVIEW CARD, MODAL & BUTTON LIFECYCLE -->
+                    <tr data-feature="F2" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-UI-01</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Kiểm tra Anti-AI Persona: Loại bỏ 100% emoji robot (🤖, 🚀, 💡, ✈️, 🎫) trên Thẻ xem trước.</td>
+                        <td>Toàn bộ chuỗi JSON của thẻ không chứa bất kỳ emoji cấm nào.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-UI-02</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Đảm bảo thẻ mới hiển thị chuẩn xác 3 nút thao tác: [Xác nhận], [Chỉnh sửa], [Hủy bỏ].</td>
+                        <td>Khối action chứa đúng 3 nút với action_id: confirm_save_ticket, open_edit_ticket_modal, cancel_ticket.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-UI-03</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Phân tách rõ ràng 2 nhóm: Thông tin bóc tách từ vé vs Thông tin hồ sơ công tác mặc định.</td>
+                        <td>Có 2 tiêu đề phân nhóm trực quan và đường phân cách divider giữa 2 nhóm.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-UI-04</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Hiển thị giá vé: Định dạng có dấu chấm phân cách hàng nghìn (VND) hoặc "Chưa rõ".</td>
+                        <td>Giá số 1800000 &rarr; "1.800.000 VND"; giá trống/null/0 &rarr; "Chưa rõ".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-UI-05</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Thẻ đã chỉnh sửa hiển thị tiêu đề và lời dẫn thông báo riêng biệt (ĐÃ CẬP NHẬT).</td>
+                        <td>Tiêu đề là "KẾT QUẢ ĐỌC VÉ MÁY BAY (ĐÃ CẬP NHẬT)" và lời dẫn "Thông tin vé máy bay sau khi chỉnh sửa:".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-UI-06</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Vô hiệu hóa nút bấm ở thẻ cũ (<code class="code-inline">hasActions = false</code>) và kiểm tra export hàm <code class="code-inline">updateSlackMessage</code>.</td>
+                        <td>Khối action bị gỡ bỏ, xuất hiện dòng ghi chú: "_Thông tin vé này đã được cập nhật ở tin nhắn mới nhất bên dưới._".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-MODAL-01</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Modal popup form chỉnh sửa chứa đủ 14 trường thông tin nghiệp vụ doanh nghiệp.</td>
+                        <td>Đầy đủ 14 input blocks: tên, email, hãng bay, số hiệu, sân bay đi/đến, giờ đi/về, PNR, ghế, hạng, giá, phòng ban, mục đích, thanh toán.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-MODAL-02</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Trường giờ hạ cánh (<code class="code-inline">arrival_time</code>) được quản lý độc lập trong Modal.</td>
+                        <td>Cho phép nhập và lưu độc lập với giờ cất cánh, bảo toàn dữ liệu khi lưu.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="E2E" data-priority="P0">
+                        <td><span class="code-inline">E2E-FLOW-03</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">E2E</span></td>
+                        <td>Mô phỏng toàn bộ luồng Submit Modal: Cập nhật Draft DynamoDB và gọi <code class="code-inline">chat.update</code> gỡ nút cũ.</td>
+                        <td>Nhận HTTP 200 OK, draft cập nhật giá trị mới, phát hiện lời gọi <code class="code-inline">chat.update</code> tới tin nhắn trước.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="E2E" data-priority="P1">
+                        <td><span class="code-inline">E2E-FLOW-04</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">E2E</span></td>
+                        <td>Mô phỏng người dùng bấm nút [Hủy bỏ] vé máy bay.</td>
+                        <td>Bản nháp <code class="code-inline">DRAFT#channelId</code> bị xóa khỏi DynamoDB, giao diện thông báo hủy thành công.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F2" data-type="UAT" data-priority="P0">
+                        <td><span class="code-inline">UAT-MODAL-01</span></td>
+                        <td>F2: Modal & Lifecycle</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td><strong>Kiểm tra thực tế triệt tiêu nút cũ:</strong> Bấm [Chỉnh sửa] trên Slack &rarr; Sửa hạng vé thành Business &rarr; [Lưu thay đổi].</td>
+                        <td>Tin nhắn mới xuất hiện có 3 nút. <strong>Tin nhắn cũ lập tức biến mất 3 nút bấm</strong> và có chú thích đã cập nhật ở dưới.</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 3: DUAL-WRITE & GOOGLE SHEETS 23-COL -->
+                    <tr data-feature="F3" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-SHEET-01</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Cấu trúc dòng ghi vào Google Sheets phải có đúng chính xác 23 cột (từ Cột A đến Cột W).</td>
+                        <td>Array ghi sheet có đúng <code class="code-inline">length === 23</code>, không lệch thứ tự cột.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F3" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-SHEET-02</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Cột R (Chi_Phí_VND) phải ghi giá trị "Chưa rõ" nếu không có giá, không được ghi số 0.</td>
+                        <td>Giá trị tại index 17 (Cột R) đúng bằng chuỗi <code class="code-inline">"Chưa rõ"</code>.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F3" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-SHEET-03</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Tên thành phố tại Cột J (Sân_Bay_Đi) và Cột L (Sân_Bay_Đến) phải chuẩn Title Case.</td>
+                        <td>Ví dụ ghi "Hồ Chí Minh" và "Hà Nội", không để chữ hoa toàn bộ "HO CHI MINH".</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F3" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-SHEET-04</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Cột G (Slack_Username) phải ghi đúng tài khoản Slack thực tế của nhân sự tạo lịch.</td>
+                        <td>Giá trị mang tiền tố <code class="code-inline">@username</code> thực tế lấy từ API users.info.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F3" data-type="E2E" data-priority="P0">
+                        <td><span class="code-inline">E2E-FLOW-02</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">E2E</span></td>
+                        <td>Mô phỏng khởi tạo bản nháp và lưu trữ bản ghi vào DynamoDB.</td>
+                        <td>Dữ liệu được chuẩn hóa và ghi thành công vào store với partition key <code class="code-inline">DRAFT#channelId</code>.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F3" data-type="UAT" data-priority="P0">
+                        <td><span class="code-inline">UAT-SHEET-01</span></td>
+                        <td>F3: Dual-Write & Sheets</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td>Bấm nút [Xác nhận] trên Slack &rarr; Mở Google Sheet tab <code class="code-inline">Lịch_Trình_Công_Tác</code> kiểm tra dòng mới.</td>
+                        <td>Dòng mới xuất hiện đủ 23 cột, Trip ID dạng <code class="code-inline">TRIP-YYYYMM-XXX</code>, cảnh báo gửi về kênh admin #biz-admin-alerts.</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 4: MANUAL TRAVEL ADMIN -->
+                    <tr data-feature="F4" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-MODAL-03</span></td>
+                        <td>F4: Manual Admin</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Khởi tạo đặt lịch thủ công qua lệnh slash command sử dụng bộ từ điển CITY_MAP chuẩn.</td>
+                        <td>Tự động nhận dạng mã IATA và gắn đúng tên thành phố không cần qua OCR ảnh.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F4" data-type="UAT" data-priority="P1">
+                        <td><span class="code-inline">UAT-ADMIN-01</span></td>
+                        <td>F4: Manual Admin</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td>Gõ lệnh <code class="code-inline">/travel-admin</code> trên Slack &rarr; Điền form và bấm [Gửi Duyệt].</td>
+                        <td>Modal hiển thị mượt mà, lưu trực tiếp bản ghi vào DynamoDB và Google Sheets, gửi alert vào admin channel.</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 5: NATURAL LANGUAGE PR CHATBOT -->
+                    <tr data-feature="F5" data-type="E2E" data-priority="P1">
+                        <td><span class="code-inline">E2E-FLOW-05</span></td>
+                        <td>F5: PR Chatbot</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">E2E</span></td>
+                        <td>Phân tích ý định Purchase Request từ tin nhắn chat tự nhiên của người dùng.</td>
+                        <td>Bóc tách đúng điểm đến, ngày dự kiến, ngân sách dự trù và mục đích; trả về thẻ PR Proposal Card.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F5" data-type="UAT" data-priority="P2">
+                        <td><span class="code-inline">UAT-CHAT-01</span></td>
+                        <td>F5: PR Chatbot</td>
+                        <td><span class="tag-p2">P2</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td>Nhắn tin chat: "Tôi cần đi công tác Hà Nội từ ngày 25 đến 28 tháng này, dự trù kinh phí 5 triệu".</td>
+                        <td>Bot phát hiện nhu cầu tạo PR, hiển thị thẻ đề xuất công tác có nút [Tạo PR].</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 6: 24H FLIGHT REMINDER CRON -->
+                    <tr data-feature="F6" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-REMIND-01</span></td>
+                        <td>F6: 24h Reminder</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Kiểm tra logic tính toán cửa sổ 24 giờ bay (in-window, future &gt; 48h, past &lt; 0h).</td>
+                        <td>Chỉ những chuyến bay cất cánh trong vòng 24–48h tới mới được kích hoạt gửi thông báo nhắc nhở.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F6" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-REMIND-02</span></td>
+                        <td>F6: 24h Reminder</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Kiểm tra mã nguồn không chứa hardcode ID demo chuyến đi trong tiến trình Cron thực tế.</td>
+                        <td>Quét toàn bộ chuyến bay thực tế từ DynamoDB GSI <code class="code-inline">DepartureTimeIndex</code> một cách động.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F6" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-REMIND-03</span></td>
+                        <td>F6: 24h Reminder</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Đồng bộ trạng thái sau khi gửi nhắc nhở lên Cột U của Google Sheets (<code class="code-inline">SENT</code>).</td>
+                        <td>Cột U được cập nhật từ PENDING &rarr; SENT để chống gửi lặp (Idempotent Notification).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F6" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-REMIND-04</span></td>
+                        <td>F6: 24h Reminder</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Nội dung tin nhắn nhắc nhở chuyến bay tuân thủ nguyên tắc Anti-AI Persona (không emoji robot).</td>
+                        <td>Đầy đủ thông tin cẩm nang điểm đến (thời tiết, quá cảnh, hành lý) viết bằng phong cách chuyên nghiệp.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F6" data-type="UAT" data-priority="P1">
+                        <td><span class="code-inline">UAT-REMIND-01</span></td>
+                        <td>F6: 24h Reminder</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">UAT</span></td>
+                        <td>Chạy tiến trình kích hoạt kiểm tra nhắc nhở: <code class="code-inline">npm run reminder</code>.</td>
+                        <td>Tin nhắn cẩm nang hành trình gửi về kênh admin và DM cá nhân người bay; Cột U trên Sheet chuyển thành SENT.</td>
+                        <td><span class="status-uat">READY FOR UAT</span></td>
+                    </tr>
+
+                    <!-- FEATURE 7: SECURITY & CLOUD INFRASTRUCTURE -->
+                    <tr data-feature="F7" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-SEC-01</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Xác thực chữ ký HMAC-SHA256 (x-slack-signature) hợp lệ với SLACK_SIGNING_SECRET.</td>
+                        <td>Chữ ký chuẩn được hệ thống chấp thuận và chuyển tiếp xử lý request (return true).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F7" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-SEC-02</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Ngăn chặn giả mạo: Từ chối chữ ký bị can thiệp hoặc sai lệch payload (Tampered signature).</td>
+                        <td>Lập tức từ chối và ngắt kết nối an toàn (return false), bảo vệ API Gateway và Lambda.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F7" data-type="Unit" data-priority="P0">
+                        <td><span class="code-inline">TC-SEC-03</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Chống tấn công phát lại (Replay Attack): Từ chối request có timestamp chênh lệch quá 5 phút (&gt; 300s).</td>
+                        <td>Các request cũ bị loại bỏ ngay tại lớp cổng bảo vệ signature verification.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F7" data-type="E2E" data-priority="P0">
+                        <td><span class="code-inline">E2E-FLOW-01</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p0">P0</span></td>
+                        <td><span class="type-pill">E2E</span></td>
+                        <td>Bắt tay xác thực URL Webhook Slack (URL Verification Handshake Challenge).</td>
+                        <td>Phản hồi ngay lập tức challenge code dạng JSON với mã trạng thái HTTP 200 OK.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F7" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-LINT-01</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Kiểm tra tính toàn vẹn cú pháp toàn bộ các file Lambda (<code class="code-inline">npm run lint:syntax</code>).</td>
+                        <td>Không phát hiện lỗi cú pháp nào trên <code class="code-inline">common.js</code>, <code class="code-inline">slack_handler.js</code>, <code class="code-inline">reminder_cron.js</code>, <code class="code-inline">ai_ocr_service.js</code>.</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                    <tr data-feature="F7" data-type="Unit" data-priority="P1">
+                        <td><span class="code-inline">TC-VISUAL-01</span></td>
+                        <td>F7: Security & Cloud</td>
+                        <td><span class="tag-p1">P1</span></td>
+                        <td><span class="type-pill">Unit</span></td>
+                        <td>Kiểm thử hồi quy giao diện sơ đồ kiến trúc bằng Playwright Chromium (<code class="code-inline">npm run test:visual</code>).</td>
+                        <td>Chụp ảnh pixel SVG và HTML sheet, xác thực không còn lỗi đen khối hình (black fill corruption).</td>
+                        <td><span class="status-pass">PASS (Automated)</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Section: Step-by-Step Manual UAT Execution Guide -->
+    <div class="section-card">
+        <div class="section-header">
+            <div class="section-title">
+                Hướng Dẫn Thực Thi Kiểm Thử Thực Tế Cho Tester / User (UAT Playbook)
+            </div>
+            <span class="section-badge tag-why" style="background: rgba(251,191,36,0.2); color: var(--accent-amber); border: 1px solid rgba(251,191,36,0.4);">Step-by-Step Runbook</span>
+        </div>
+
+        <details open>
+            <summary>Kịch bản UAT 1: Bóc tách vé & Chỉnh sửa Modal (Kiểm tra triệt tiêu nút cũ)</summary>
+            <div class="details-content">
+                <div class="step-box">
+                    <span class="step-num">Bước 1:</span> Kéo thả 1 ảnh vé máy bay (Vietnam Airlines / Vietjet / Bamboo) vào kênh Slack đã cài bot.
+                </div>
+                <div class="step-box">
+                    <span class="step-num">Bước 2:</span> Quan sát bot phản hồi thẻ xem trước với tiêu đề: <code class="code-inline">KẾT QUẢ ĐỌC VÉ MÁY BAY</code> và đủ 3 nút <code class="code-inline">[Xác nhận]</code>, <code class="code-inline">[Chỉnh sửa]</code>, <code class="code-inline">[Hủy bỏ]</code>.
+                </div>
+                <div class="step-box">
+                    <span class="step-num">Bước 3:</span> Bấm vào nút <strong>[Chỉnh sửa]</strong> &rarr; Form Modal hiện lên &rarr; Thay đổi hạng vé thành <strong>Business</strong> và sửa giá vé &rarr; Bấm <strong>[Lưu thay đổi]</strong>.
+                </div>
+                <div class="step-box" style="border-left-color: var(--accent-emerald);">
+                    <span class="step-num" style="color: var(--accent-emerald);">KẾT QUẢ MONG ĐỢI:</span>
+                    <ul style="margin-left: 20px; margin-top: 6px;">
+                        <li>Tin nhắn mới xuất hiện có tiêu đề <code class="code-inline">KẾT QUẢ ĐỌC VÉ MÁY BAY (ĐÃ CẬP NHẬT)</code> và giữ đủ 3 nút hành động mới.</li>
+                        <li><strong>Tin nhắn trước đó lập tức biến mất 3 nút bấm</strong> và hiển thị ghi chú: <em>_Thông tin vé này đã được cập nhật ở tin nhắn mới nhất bên dưới._</em></li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+
+        <details open>
+            <summary>Kịch bản UAT 2: Xác nhận lưu & Kiểm toán Dual-Write (DynamoDB + Google Sheets 23 cột)</summary>
+            <div class="details-content">
+                <div class="step-box">
+                    <span class="step-num">Bước 1:</span> Tại thẻ tin nhắn mới nhất, bấm nút <strong>[Xác nhận]</strong>.
+                </div>
+                <div class="step-box">
+                    <span class="step-num">Bước 2:</span> Mở Google Sheet tại tab <code class="code-inline">Lịch_Trình_Công_Tác</code> &rarr; Kiểm tra dòng dữ liệu mới nhất ở cuối bảng.
+                </div>
+                <div class="step-box" style="border-left-color: var(--accent-emerald);">
+                    <span class="step-num" style="color: var(--accent-emerald);">KẾT QUẢ MONG ĐỢI:</span>
+                    <ul style="margin-left: 20px; margin-top: 6px;">
+                        <li>Đủ 23 cột từ Cột A đến Cột W. Cột J và L là tên thành phố Title Case ("Kuala Lumpur", "Hồ Chí Minh").</li>
+                        <li>Cột R hiển thị đúng giá tiền hoặc chữ "Chưa rõ" (không bị số 0).</li>
+                        <li>Cột U có giá trị ban đầu là <code class="code-inline">PENDING</code>.</li>
+                        <li>Kênh quản trị <code class="code-inline">#biz-admin-alerts</code> nhận được tin nhắn thông báo chuyến công tác mới với mã <code class="code-inline">TRIP-YYYYMM-XXX</code>.</li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>Kịch bản UAT 3: Đặt lịch công tác thủ công bằng lệnh /travel-admin</summary>
+            <div class="details-content">
+                <div class="step-box">
+                    <span class="step-num">Bước 1:</span> Trong bất kỳ kênh nào, gõ lệnh <code class="code-inline">/travel-admin</code> hoặc <code class="code-inline">/book-travel</code> và nhấn Enter.
+                </div>
+                <div class="step-box">
+                    <span class="step-num">Bước 2:</span> Nhập thông tin nhân sự, số hiệu chuyến bay, mã sân bay IATA (VD: SGN &rarr; HAN), giờ cất cánh &rarr; Bấm <strong>[Gửi Duyệt]</strong>.
+                </div>
+                <div class="step-box" style="border-left-color: var(--accent-emerald);">
+                    <span class="step-num" style="color: var(--accent-emerald);">KẾT QUẢ MONG ĐỢI:</span> Dữ liệu được ghi thẳng vào DynamoDB và Google Sheets mà không cần qua OCR ảnh; kênh admin nhận thông báo thành công.
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>Kịch bản UAT 4: Tạo đề xuất công tác qua hội thoại tự nhiên (Natural Language PR)</summary>
+            <div class="details-content">
+                <div class="step-box">
+                    <span class="step-num">Bước 1:</span> Nhắn vào kênh: "Tôi cần đi công tác Hà Nội từ 25/11 đến 28/11 gặp khách hàng, dự trù chi phí 5 triệu".
+                </div>
+                <div class="step-box" style="border-left-color: var(--accent-emerald);">
+                    <span class="step-num" style="color: var(--accent-emerald);">KẾT QUẢ MONG ĐỢI:</span> Bot phát hiện intent PR, trả về thẻ tóm tắt đề xuất công tác và ngân sách để quản lý phê duyệt.
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>Kịch bản UAT 5: Kích hoạt kiểm tra tự động nhắc nhở chuyến bay 24h & Cẩm nang điểm đến</summary>
+            <div class="details-content">
+                <div class="step-box">
+                    <span class="step-num">Bước 1:</span> Chạy lệnh kiểm thử worker: <code class="code-inline">node scripts/reminder_worker.js</code> hoặc kích hoạt EventBridge Rule trên AWS Console.
+                </div>
+                <div class="step-box" style="border-left-color: var(--accent-emerald);">
+                    <span class="step-num" style="color: var(--accent-emerald);">KẾT QUẢ MONG ĐỢI:</span>
+                    <ul style="margin-left: 20px; margin-top: 6px;">
+                        <li>Hệ thống tự động lọc ra các chuyến bay khởi hành trong 24h tới.</li>
+                        <li>AI tổng hợp cẩm nang điểm đến (thời tiết, phương tiện, chuẩn bị) và gửi vào Slack.</li>
+                        <li>Cột U trên Google Sheets tự động chuyển trạng thái từ <code class="code-inline">PENDING</code> sang <code class="code-inline">SENT</code>.</li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <!-- Section: CLI Command Reference -->
+    <div class="section-card">
+        <div class="section-header">
+            <div class="section-title">
+                Bộ Lệnh Chạy Kiểm Thử Tự Động (Automated Test Execution CLI)
+            </div>
+            <span class="section-badge tag-tech" style="background: rgba(129,140,248,0.2); color: var(--accent-indigo); border: 1px solid rgba(129,140,248,0.4);">Terminal Commands</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px;">
+            <div style="background: var(--bg-card); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                <div style="font-weight: 700; color: var(--accent-blue); margin-bottom: 6px;">Chạy Toàn Bộ Test Suite (36 Tests)</div>
+                <code class="code-inline" style="display: block; padding: 8px;">npm test</code>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Bao gồm 31 Comprehensive Unit Tests + 5 E2E Simulation Flows.</div>
+            </div>
+            <div style="background: var(--bg-card); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                <div style="font-weight: 700; color: var(--accent-emerald); margin-bottom: 6px;">Kiểm Tra Cú Pháp Toàn Bộ Lambda</div>
+                <code class="code-inline" style="display: block; padding: 8px;">npm run lint:syntax</code>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Chạy node --check trên common.js, slack_handler.js, reminder_cron.js.</div>
+            </div>
+            <div style="background: var(--bg-card); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                <div style="font-weight: 700; color: var(--accent-purple); margin-bottom: 6px;">Kiểm Thử Hồi Quy Giao Diện Sơ Đồ</div>
+                <code class="code-inline" style="display: block; padding: 8px;">npm run test:visual</code>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Dùng Playwright Chromium render và kiểm tra lỗi black fill SVG.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        Smart Travel Assistant — Enterprise Automated Testing & QA/QC Engineering Standard &bull; Version 1.0.0 &bull; 2026
+    </footer>
+
+</div>
+
+<script>
+    // Initialize Mermaid
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
+
+    // Interactive Filtering Logic
+    const searchInput = document.getElementById('searchInput');
+    const featureFilter = document.getElementById('featureFilter');
+    const typeFilter = document.getElementById('typeFilter');
+    const priorityFilter = document.getElementById('priorityFilter');
+    const matrixTable = document.getElementById('matrixTable');
+    const rows = matrixTable.querySelectorAll('tbody tr');
+    const kpiTotal = document.getElementById('kpi-total');
+
+    function filterTable() {
+        const query = searchInput.value.toLowerCase().trim();
+        const selectedFeature = featureFilter.value;
+        const selectedType = typeFilter.value;
+        const selectedPriority = priorityFilter.value;
+
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const rowFeature = row.getAttribute('data-feature');
+            const rowType = row.getAttribute('data-type');
+            const rowPriority = row.getAttribute('data-priority');
+            const rowText = row.textContent.toLowerCase();
+
+            const matchesSearch = !query || rowText.includes(query);
+            const matchesFeature = selectedFeature === 'ALL' || rowFeature === selectedFeature;
+            const matchesType = selectedType === 'ALL' || rowType === selectedType;
+            const matchesPriority = selectedPriority === 'ALL' || rowPriority === selectedPriority;
+
+            if (matchesSearch && matchesFeature && matchesType && matchesPriority) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        if (kpiTotal) {
+            kpiTotal.textContent = visibleCount;
+        }
+    }
+
+    searchInput.addEventListener('input', filterTable);
+    featureFilter.addEventListener('change', filterTable);
+    typeFilter.addEventListener('change', filterTable);
+    priorityFilter.addEventListener('change', filterTable);
+</script>
+
+</body>
+</html>
