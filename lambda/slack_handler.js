@@ -701,7 +701,16 @@ async function handleSlackEvent(event) {
     console.error('Error fetching draft:', e);
   }
 
-  if (currentDraft && userText.length > 0) {
+  // Chỉ xử lý sửa bản nháp khi người dùng trả lời ĐÚNG thread chứa bản nháp đó
+  // và không phải câu hỏi phân tích BI tại kênh quản trị
+  const isSameDraftThread = Boolean(
+    event.thread_ts &&
+    currentDraft?.thread_ts &&
+    event.thread_ts === currentDraft.thread_ts
+  );
+  const isAdminBIQuery = channelRole === ROLES.ADMIN_HR && isLikelyBIQuery(userText);
+
+  if (currentDraft && userText.length > 0 && isSameDraftThread && !isAdminBIQuery) {
     // Nếu người dùng muốn hủy bản nháp
     if (/(hủy|huỷ|cancel|thôi|bỏ)/i.test(userText)) {
       await docClient.send(new DeleteCommand({

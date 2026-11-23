@@ -366,9 +366,17 @@ async function runE2E() {
 
   // --------------------------------------------------------------------------
   // FLOW 8: Admin AI Travel BI Agent Executes Query in #biz-admin-alerts
+  // (Even when an unconfirmed DRAFT exists in an earlier thread)
   // --------------------------------------------------------------------------
   try {
     process.env.OPENROUTER_API_KEY = 'mock_openrouter_key';
+    // Đặt sẵn 1 bản nháp chưa xác nhận ở thread cũ để kiểm tra chống hijack câu hỏi BI
+    dbStore.set('DRAFT#C0CGLFPNW7R', {
+      trip_id: 'DRAFT#C0CGLFPNW7R',
+      channel_id: 'C0CGLFPNW7R',
+      thread_ts: '1700000000.000001',
+      ticket_data: { passenger_name: 'Hussin Norhilman', flight_number: 'VN674' }
+    });
     dbStore.set('TRIP-202611-888', {
       trip_id: 'TRIP-202611-888',
       passenger_name: 'Hussin Norhilman',
