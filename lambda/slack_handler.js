@@ -7,8 +7,18 @@ const {
   extractTicketFromBase64,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
-  parseEditSavedTripRequest
+  parseEditSavedTripRequest,
+  planBIQuery,
+  synthesizeBIInsights
 } = require('./ai_ocr_service');
+const {
+  ROLES,
+  getChannelRole,
+  buildUnauthorizedMessage,
+  executeBIQuery,
+  buildBIReportCard,
+  isLikelyBIQuery
+} = require('./bi_analytics_service');
 const {
   docClient,
   PutCommand,
@@ -445,10 +455,34 @@ function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = 
 // Handle Slack Events (Message or App Mention)
 async function handleSlackEvent(event) {
   if (event.bot_id || event.subtype === 'bot_message') return;
+  if (event.subtype && event.subtype !== 'file_share') return;
 
   const channelId = event.channel;
   const userText = (event.text || '').replace(/<@[A-Z0-9]+>/g, '').trim();
   const threadTs = event.thread_ts || event.ts;
+  const channelRole = getChannelRole(channelId);
+  const isEmployeeChannel = channelRole === ROLES.EMPLOYEE;
+
+  // Chống xử lý trùng lặp khi Slack bắn đồng thời app_mention và message.channels/message.groups
+  if (event.ts && channelId) {
+    try {
+      await docClient.send(new PutCommand({
+        TableName: DYNAMODB_TABLE,
+        Item: {
+          trip_id: `EVENT#${channelId}#${event.ts}`,
+          channel_id: channelId,
+          event_type: event.type,
+          created_at: new Date().toISOString()
+        },
+        ConditionExpression: 'attribute_not_exists(trip_id)'
+      }));
+    } catch (err) {
+      if (err?.name === 'ConditionalCheckFailedException') {
+        console.log(`Duplicate Slack event ignored: ${channelId}#${event.ts}`);
+        return;
+      }
+    }
+  }
 
   // 1. Thu thập tất cả các file đính kèm từ mọi thuộc tính có thể có
   let rawFiles = [];
@@ -567,6 +601,15 @@ async function handleSlackEvent(event) {
   const isEditAction = /(sửa|đổi|chỉnh|cập nhật|update|thay đổi)/i.test(userText);
 
   if (tripIdMatch && isEditAction) {
+    if (isEmployeeChannel) {
+      await postSlackMessage(channelId, {
+        channel: channelId,
+        thread_ts: threadTs,
+        text: buildUnauthorizedMessage('edit_saved_trip')
+      });
+      return;
+    }
+
     const tripId = tripIdMatch[0].toUpperCase();
     try {
       const existingTripRes = await docClient.send(new GetCommand({
@@ -726,20 +769,73 @@ async function handleSlackEvent(event) {
   }
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 4: Người dùng tag bot nhắc đến vé nhưng chưa có ảnh
+  // TRƯỜNG HỢP 4: Người dùng nhắc đến vé nhưng chưa có ảnh
   // -------------------------------------------------------------
-  const isTicketIntent = /(vé|ticket|boarding|pass|thêm vé|add vé|ảnh vé|scan|ocr|quét|lịch trình)/i.test(userText);
-  if (isTicketIntent && imageFiles.length === 0) {
+  const isTicketIntent = /(vé|ticket|boarding|pass|thêm vé|add vé|ảnh vé|scan|ocr|quét)/i.test(userText);
+  if (isTicketIntent && imageFiles.length === 0 && !isLikelyBIQuery(userText)) {
+    const ticketHint = isEmployeeChannel
+      ? "Bạn vừa gửi yêu cầu về vé máy bay nhưng chưa có ảnh đính kèm. Vui lòng tải lên ảnh vé máy bay/boarding pass để hệ thống trích xuất và hỗ trợ điền thông tin."
+      : "Bạn vừa gửi yêu cầu về vé máy bay nhưng chưa có ảnh đính kèm. Vui lòng gửi kèm ảnh vé máy bay/boarding pass để hệ thống xử lý, hoặc dùng lệnh /travel-admin để tạo thủ công.";
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "Bạn vừa gửi yêu cầu về vé máy bay nhưng chưa có ảnh đính kèm. Vui lòng gửi kèm ảnh vé máy bay/boarding pass để hệ thống xử lý, hoặc dùng lệnh /travel-admin để tạo thủ công."
+      text: ticketHint
     });
     return;
   }
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 5: Natural Language PR Chat (Tạo đề xuất công tác)
+  // RBAC GUARD CHO KÊNH NHÂN VIÊN (#travel-booking)
+  // Chỉ cho phép tải ảnh vé & chỉnh sửa bản nháp; chặn mọi prompt ngoài thẩm quyền
+  // -------------------------------------------------------------
+  if (isEmployeeChannel) {
+    if (userText.length > 0 || event.type === 'app_mention') {
+      await postSlackMessage(channelId, {
+        channel: channelId,
+        thread_ts: threadTs,
+        text: buildUnauthorizedMessage('general')
+      });
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------
+  // TRƯỜNG HỢP 5 (ADMIN_HR): AI Travel BI & Natural Language Query Agent
+  // Chỉ hoạt động tại kênh quản trị #biz-admin-alerts
+  // -------------------------------------------------------------
+  if (channelRole === ROLES.ADMIN_HR && userText.length > 0) {
+    try {
+      const biPlan = await planBIQuery(userText);
+      if (biPlan && biPlan.is_bi_query) {
+        await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
+          text: "Đang truy xuất dữ liệu TravelBookings và tổng hợp báo cáo phân tích..."
+        });
+
+        const scanRes = await docClient.send(new ScanCommand({
+          TableName: DYNAMODB_TABLE
+        }));
+        const stats = executeBIQuery(scanRes.Items || [], biPlan);
+
+        let summary = '';
+        try {
+          summary = await synthesizeBIInsights(userText, stats);
+        } catch (aiErr) {
+          console.error('BI insight synthesis fallback:', aiErr.message);
+        }
+
+        const biCard = buildBIReportCard(channelId, threadTs, userText, stats, summary);
+        await postSlackMessage(channelId, biCard);
+        return;
+      }
+    } catch (biErr) {
+      console.error('BI Query Planner error:', biErr.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // TRƯỜNG HỢP 6: Natural Language PR Chat (Tạo đề xuất công tác)
   // -------------------------------------------------------------
   if (userText.length > 0) {
     try {
@@ -786,12 +882,12 @@ async function handleSlackEvent(event) {
       console.log('Not a PR request:', err.message);
     }
 
-    // Fallback: Chào hỏi chung
+    // Fallback: Chào hỏi chung cho kênh Quản trị
     if (event.type === 'app_mention') {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
-        text: "Smart Travel Assistant - Trợ lý Quản lý Công tác.\n\nCác tính năng hỗ trợ:\n1. Gửi ảnh vé máy bay: Tự động trích xuất thông tin, cho phép kiểm tra, chỉnh sửa qua biểu mẫu và xác nhận lưu.\n2. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu (Ví dụ: Sửa giờ bay của TRIP-202611-824 thành 16:30).\n3. Dùng lệnh /travel-admin: Mở form đặt lịch công tác.\n4. Đề xuất công tác: Nhắn tin tự nhiên (Ví dụ: Đề xuất đi Hà Nội ngày 20/11 ngân sách 15 triệu)."
+        text: "Smart Travel Assistant - Trợ lý Quản trị Công tác (Role: ADMIN_HR).\n\nCác tính năng hỗ trợ tại kênh quản trị:\n1. AI Travel BI Agent: Hỏi thống kê chi phí, phòng ban, vé thiếu giá, lịch bay sắp tới (VD: Tổng chi phí vé máy bay tháng này là bao nhiêu?).\n2. Gửi ảnh vé máy bay: Tự động trích xuất OCR, chỉnh sửa qua Modal và xác nhận lưu.\n3. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu (VD: Sửa giờ bay của TRIP-202611-824 thành 16:30).\n4. Dùng lệnh /travel-admin: Mở form đặt lịch công tác thủ công.\n5. Đề xuất công tác: Nhắn tin tự nhiên tạo Purchase Request (PR)."
       });
       return;
     }
@@ -802,7 +898,7 @@ async function handleSlackEvent(event) {
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "Smart Travel Assistant - Trợ lý Quản lý Công tác.\n\nCác tính năng hỗ trợ:\n1. Gửi ảnh vé máy bay: Tự động trích xuất thông tin, cho phép kiểm tra, chỉnh sửa qua biểu mẫu và xác nhận lưu.\n2. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu (Ví dụ: Sửa giờ bay của TRIP-202611-824 thành 16:30).\n3. Dùng lệnh /travel-admin: Mở form đặt lịch công tác.\n4. Đề xuất công tác: Nhắn tin tự nhiên (Ví dụ: Đề xuất đi Hà Nội ngày 20/11 ngân sách 15 triệu)."
+      text: "Smart Travel Assistant - Trợ lý Quản trị Công tác (Role: ADMIN_HR).\n\nCác tính năng hỗ trợ tại kênh quản trị:\n1. AI Travel BI Agent: Hỏi thống kê chi phí, phòng ban, vé thiếu giá, lịch bay sắp tới.\n2. Gửi ảnh vé máy bay: Tự động trích xuất OCR, chỉnh sửa qua Modal và xác nhận lưu.\n3. Chỉnh sửa chuyến đi đã lưu: Nhắn tin yêu cầu với mã TRIP-YYYYMM-XXX.\n4. Dùng lệnh /travel-admin: Mở form đặt lịch công tác thủ công."
     });
   }
 }
@@ -867,6 +963,19 @@ exports.handler = async (event, context) => {
   if (path.endsWith('/slack/commands')) {
     const params = new URLSearchParams(bodyStr);
     const triggerId = params.get('trigger_id');
+    const cmdChannelId = params.get('channel_id');
+
+    // RBAC Guard: Chặn lệnh quản trị /travel-admin tại kênh Nhân viên
+    if (getChannelRole(cmdChannelId) === ROLES.EMPLOYEE) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          response_type: 'ephemeral',
+          text: buildUnauthorizedMessage('slash_command')
+        })
+      };
+    }
 
     if (triggerId) {
       const modalView = {

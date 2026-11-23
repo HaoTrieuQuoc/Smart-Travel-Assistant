@@ -10,9 +10,10 @@ project_name = ""
 dynamodb_table_name = ""
 
 # Slack Integration Credentials
-slack_bot_token        = ""
-slack_signing_secret   = ""
-slack_admin_channel_id = ""
+slack_bot_token           = ""
+slack_signing_secret      = ""
+slack_admin_channel_id    = ""
+slack_employee_channel_id = ""
 
 # Google Sheets Configuration
 google_sheet_id       = ""

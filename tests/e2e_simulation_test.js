@@ -94,11 +94,28 @@ https.request = function(options, callback) {
       res.headers = { 'content-type': 'application/json' };
       process.nextTick(() => {
         if (callback) callback(res);
-        res.emit('data', JSON.stringify({
-          ok: true,
-          ts: '1700000000.000200',
-          user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
-        }));
+        const hostname = typeof options === 'object' ? (options.hostname || '') : '';
+        if (hostname.includes('openrouter.ai')) {
+          const isPlanner = postBody.includes('Travel BI Query Planner');
+          const content = isPlanner
+            ? JSON.stringify({
+                is_bi_query: true,
+                query_type: 'GROUP_BY_DEPARTMENT',
+                group_by: 'department',
+                filters: {},
+                limit: 10
+              })
+            : '• Tổng chi phí ghi nhận là 3.500.000 VND trên 1 chuyến bay.\n• Không phát hiện vé thiếu giá.';
+          res.emit('data', JSON.stringify({
+            choices: [{ message: { content } }]
+          }));
+        } else {
+          res.emit('data', JSON.stringify({
+            ok: true,
+            ts: '1700000000.000200',
+            user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
+          }));
+        }
         res.emit('end');
       });
     }
@@ -299,6 +316,83 @@ async function runE2E() {
     recordE2E('E2E-FLOW-05', 'Natural Language PR Chat Request Structure', pass);
   } catch (e) {
     recordE2E('E2E-FLOW-05', 'Natural Language PR Chat Request Structure', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 6: RBAC Guard Blocks /travel-admin in Employee Channel (#travel-booking)
+  // --------------------------------------------------------------------------
+  try {
+    const res = await handler({
+      rawPath: '/slack/commands',
+      body: 'command=%2Ftravel-admin&trigger_id=TRIG123&channel_id=C0CH1CC22FL&user_id=U999'
+    }, {});
+    const body = JSON.parse(res.body || '{}');
+    const pass = res.statusCode === 200 &&
+      body.response_type === 'ephemeral' &&
+      String(body.text || '').includes('không nằm trong thẩm quyền');
+    recordE2E('E2E-FLOW-06', 'RBAC Blocks /travel-admin in Employee Channel', pass);
+  } catch (e) {
+    recordE2E('E2E-FLOW-06', 'RBAC Blocks /travel-admin in Employee Channel', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 7: RBAC Guard Blocks Out-of-Scope Prompt in Employee Channel
+  // --------------------------------------------------------------------------
+  try {
+    const callsBefore = outboundCalls.length;
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0CH1CC22FL',
+      user: 'U_EMP_1',
+      text: 'Thống kê tổng chi phí công tác tháng này giúp tôi',
+      ts: '1700000001.000100'
+    });
+    const newCalls = outboundCalls.slice(callsBefore);
+    const blockedReply = newCalls.find(c => c.url.includes('chat.postMessage') && c.body.includes('không nằm trong thẩm quyền'));
+    recordE2E('E2E-FLOW-07', 'RBAC Blocks BI/Out-of-Scope Prompt in Employee Channel', Boolean(blockedReply));
+  } catch (e) {
+    recordE2E('E2E-FLOW-07', 'RBAC Blocks BI/Out-of-Scope Prompt in Employee Channel', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 8: Admin AI Travel BI Agent Executes Query in #biz-admin-alerts
+  // --------------------------------------------------------------------------
+  try {
+    process.env.OPENROUTER_API_KEY = 'mock_openrouter_key';
+    dbStore.set('TRIP-202611-888', {
+      trip_id: 'TRIP-202611-888',
+      passenger_name: 'Hussin Norhilman',
+      department: 'Ban Giám Đốc',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN674',
+      departure_iata: 'KUL',
+      departure_city: 'Kuala Lumpur',
+      arrival_iata: 'SGN',
+      arrival_city: 'Hồ Chí Minh',
+      departure_time: '2026-11-25 19:20',
+      ticket_class: 'Business',
+      ticket_price: '3500000'
+    });
+
+    const callsBefore = outboundCalls.length;
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    await handleSlackEvent({
+      type: 'app_mention',
+      channel: 'C0CGLFPNW7R',
+      user: 'U_ADMIN_1',
+      text: '<@B012345> Thống kê chi phí công tác theo phòng ban tháng này',
+      ts: '1700000002.000100'
+    });
+    const newCalls = outboundCalls.slice(callsBefore);
+    const biReportPost = newCalls.find(c =>
+      c.url.includes('chat.postMessage') &&
+      c.body.includes('BÁO CÁO PHÂN TÍCH CÔNG TÁC') &&
+      c.body.includes('3.500.000 VND')
+    );
+    recordE2E('E2E-FLOW-08', 'Admin AI Travel BI Agent Report in #biz-admin-alerts', Boolean(biReportPost));
+  } catch (e) {
+    recordE2E('E2E-FLOW-08', 'Admin AI Travel BI Agent Report in #biz-admin-alerts', false, e.message);
   }
 
   // --------------------------------------------------------------------------

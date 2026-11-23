@@ -227,11 +227,89 @@ Hãy phân tích và trả về các trường cần sửa đổi thành JSON th
   return parsed;
 }
 
+/**
+ * AI Query Planner: Chuyển câu hỏi quản trị tự nhiên thành kế hoạch truy vấn JSON an toàn (Read-Only)
+ */
+async function planBIQuery(userQuestion) {
+  const prompt = `Bạn là chuyên gia phân tích dữ liệu công tác doanh nghiệp (Travel BI Query Planner).
+Câu hỏi của quản trị viên HR: "${userQuestion}"
+
+Hãy phân tích câu hỏi và trả về DUY NHẤT một JSON hợp lệ (không kèm markdown giải thích):
+{
+  "is_bi_query": true/false (đúng nếu là câu hỏi thống kê, báo cáo, tổng chi phí, liệt kê chuyến bay, tìm nhân sự bay, đối soát vé thiếu giá),
+  "query_type": "COST_SUMMARY" | "GROUP_BY_DEPARTMENT" | "GROUP_BY_AIRLINE" | "GROUP_BY_DESTINATION" | "MISSING_PRICE_AUDIT" | "UPCOMING_FLIGHTS" | "LIST_TRIPS" | "GENERAL_STATS",
+  "group_by": "department" | "airline" | "arrival_city" | "month" | null,
+  "filters": {
+    "month": "YYYY-MM nếu hỏi theo tháng cụ thể (mặc định năm 2026 nếu thiếu năm), hoặc null",
+    "department": "Tên phòng ban nếu có, hoặc null",
+    "destination": "Tên thành phố hoặc mã IATA điểm đến nếu có, hoặc null",
+    "airline": "Tên hãng hàng không nếu có, hoặc null",
+    "passenger_name": "Tên hành khách hoặc username nếu có, hoặc null",
+    "ticket_class": "Economy hoặc Business nếu có, hoặc null",
+    "missing_price_only": true/false (true nếu hỏi về vé thiếu giá / chưa rõ giá),
+    "upcoming_days": số ngày tới (ví dụ 7, 14, 30) nếu hỏi chuyến sắp bay, hoặc null
+  },
+  "limit": 10
+}`;
+
+  const payload = {
+    model: process.env.AI_MODEL || '@preset/free-model-stack',
+    messages: [
+      { role: 'system', content: 'You are an enterprise BI query planner. Always return strict valid JSON only.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.1
+  };
+
+  const raw = await callOpenRouter(payload);
+  return cleanJsonResponse(raw);
+}
+
+/**
+ * AI Executive Synthesizer: Viết nhận định quản trị ngắn gọn dựa trên số liệu đã được code tính toán chính xác
+ */
+async function synthesizeBIInsights(userQuestion, stats) {
+  const prompt = `Bạn là chuyên gia phân tích tài chính & vận hành công tác (Corporate Travel FinOps Analyst).
+Câu hỏi của quản trị viên: "${userQuestion}"
+
+Số liệu thống kê chính xác từ hệ thống DynamoDB:
+${JSON.stringify({
+    matched_count: stats.matched_count,
+    total_records_in_db: stats.total_records_in_db,
+    total_cost_vnd: stats.total_cost_vnd,
+    avg_cost_vnd: stats.avg_cost_vnd,
+    missing_price_trips: stats.missing_price_trips,
+    breakdown: stats.breakdown.slice(0, 5),
+    anomalies: stats.anomalies
+  }, null, 2)}
+
+Hãy viết 2 đến 3 gạch đầu dòng nhận định ngắn gọn, khách quan bằng tiếng Việt dành cho HR/Ban Giám đốc.
+Quy tắc bắt buộc:
+- Chỉ sử dụng chính xác các con số trong dữ liệu trên, tuyệt đối không tự bịa số liệu.
+- Không sử dụng bất kỳ emoji nào (không dùng biểu tượng cảm xúc).
+- Ngắn gọn dưới 80 từ.`;
+
+  const payload = {
+    model: process.env.AI_MODEL || '@preset/free-model-stack',
+    messages: [
+      { role: 'system', content: 'You are a concise Vietnamese enterprise FinOps analyst. Never use emojis. Never invent numbers.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.2,
+    max_tokens: 300
+  };
+
+  const raw = await callOpenRouter(payload);
+  return String(raw || '').trim();
+}
+
 module.exports = {
   extractTicketFromBase64,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
   parseEditSavedTripRequest,
+  planBIQuery,
+  synthesizeBIInsights,
   callOpenRouter
 };
 

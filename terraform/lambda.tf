@@ -22,6 +22,7 @@ resource "aws_lambda_function" "slack_handler" {
       SLACK_BOT_TOKEN             = var.slack_bot_token
       SLACK_SIGNING_SECRET        = var.slack_signing_secret
       SLACK_ADMIN_CHANNEL_ID      = var.slack_admin_channel_id
+      SLACK_EMPLOYEE_CHANNEL_ID   = var.slack_employee_channel_id
       GOOGLE_SHEET_ID             = var.google_sheet_id
       GOOGLE_SHEET_TAB_NAME       = var.google_sheet_tab_name
       GOOGLE_SERVICE_ACCOUNT_JSON = var.google_service_account_json

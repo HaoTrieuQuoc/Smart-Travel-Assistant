@@ -701,7 +701,143 @@ try {
 }
 
 // ============================================================================
-// 8. TEST SUMMARY REPORT
+// 8. FEATURE 8: CHANNEL-BASED RBAC & AI TRAVEL BI ANALYTICS ENGINE
+// ============================================================================
+console.log('\n--- 8. Testing Feature: Channel-Based RBAC & AI Travel BI Engine ---');
+
+try {
+  const {
+    ROLES,
+    getChannelRole,
+    buildUnauthorizedMessage,
+    executeBIQuery,
+    buildBIReportCard
+  } = require('../lambda/bi_analytics_service');
+
+  // TC-RBAC-01: Channel Role Resolution
+  const rAdmin = getChannelRole('C0CGLFPNW7R');
+  const rEmp = getChannelRole('C0CH1CC22FL');
+  const rUnknown = getChannelRole('C9999999999');
+  if (rAdmin === ROLES.ADMIN_HR && rEmp === ROLES.EMPLOYEE && rUnknown === ROLES.UNKNOWN) {
+    recordTest('TC-RBAC-01', 'Channel RBAC', 'Maps #biz-admin-alerts to ADMIN_HR and #travel-booking to EMPLOYEE', 'PASS');
+  } else {
+    recordTest('TC-RBAC-01', 'Channel RBAC', `Role mapping mismatch: admin=${rAdmin}, emp=${rEmp}, unk=${rUnknown}`, 'FAIL');
+  }
+
+  // TC-RBAC-02: Unauthorized Messages Policy
+  const msgCmd = buildUnauthorizedMessage('slash_command');
+  const msgEdit = buildUnauthorizedMessage('edit_saved_trip');
+  const msgGen = buildUnauthorizedMessage('general');
+  const validMsgs = msgCmd.includes('không nằm trong thẩm quyền') &&
+    msgEdit.includes('không nằm trong thẩm quyền') &&
+    msgGen.includes('không nằm trong thẩm quyền');
+  if (validMsgs) {
+    recordTest('TC-RBAC-02', 'Channel RBAC', 'Unauthorized guard messages explicitly communicate out-of-authority policy', 'PASS');
+  } else {
+    recordTest('TC-RBAC-02', 'Channel RBAC', 'Unauthorized guard messages missing required authority wording', 'FAIL');
+  }
+
+  // Sample dataset for deterministic BI tests
+  const sampleDbItems = [
+    { trip_id: 'DRAFT#C0CH1CC22FL', ticket_price: '99999999' },
+    { trip_id: 'EVENT#C0CGLFPNW7R#1700000.1', channel_id: 'C0CGLFPNW7R' },
+    {
+      trip_id: 'TRIP-202611-001',
+      passenger_name: 'Nguyen Van A',
+      department: 'Kinh Doanh',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN214',
+      departure_iata: 'SGN',
+      departure_city: 'Hồ Chí Minh',
+      arrival_iata: 'HAN',
+      arrival_city: 'Hà Nội',
+      departure_time: '2026-11-25 08:30',
+      ticket_class: 'Economy',
+      ticket_price: '2000000'
+    },
+    {
+      trip_id: 'TRIP-202611-002',
+      passenger_name: 'Tran Thi B',
+      department: 'Ban Giám Đốc',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN674',
+      departure_iata: 'SGN',
+      departure_city: 'Hồ Chí Minh',
+      arrival_iata: 'KUL',
+      arrival_city: 'Kuala Lumpur',
+      departure_time: '2026-11-26 19:20',
+      ticket_class: 'Business',
+      ticket_price: '8000000'
+    },
+    {
+      trip_id: 'TRIP-202611-003',
+      passenger_name: 'Le Van C',
+      department: 'Kinh Doanh',
+      airline: 'Vietjet Air',
+      flight_number: 'VJ120',
+      departure_iata: 'HAN',
+      departure_city: 'Hà Nội',
+      arrival_iata: 'DAD',
+      arrival_city: 'Đà Nẵng',
+      departure_time: '2026-11-28 10:00',
+      ticket_class: 'Economy',
+      ticket_price: 'Chưa rõ'
+    }
+  ];
+
+  // TC-BI-01: Deterministic Aggregation & Non-Trip Filtering
+  const summaryStats = executeBIQuery(sampleDbItems, { query_type: 'COST_SUMMARY' });
+  const bi01Pass = summaryStats.total_records_in_db === 3 &&
+    summaryStats.matched_count === 3 &&
+    summaryStats.priced_trips === 2 &&
+    summaryStats.missing_price_trips === 1 &&
+    summaryStats.total_cost_vnd === 10000000 &&
+    summaryStats.avg_cost_vnd === 5000000;
+  if (bi01Pass) {
+    recordTest('TC-BI-01', 'AI Travel BI Engine', 'Filters DRAFT#/EVENT# records and computes exact deterministic cost totals', 'PASS');
+  } else {
+    recordTest('TC-BI-01', 'AI Travel BI Engine', `Aggregation mismatch: ${JSON.stringify(summaryStats)}`, 'FAIL');
+  }
+
+  // TC-BI-02: Department Grouping & Ranking
+  const deptStats = executeBIQuery(sampleDbItems, { query_type: 'GROUP_BY_DEPARTMENT' });
+  const bi02Pass = deptStats.breakdown.length === 2 &&
+    deptStats.breakdown[0].key === 'Ban Giám Đốc' &&
+    deptStats.breakdown[0].total_cost_vnd === 8000000 &&
+    deptStats.breakdown[1].key === 'Kinh Doanh' &&
+    deptStats.breakdown[1].trip_count === 2 &&
+    deptStats.breakdown[1].missing_price_count === 1;
+  if (bi02Pass) {
+    recordTest('TC-BI-02', 'AI Travel BI Engine', 'Groups trips by department and ranks accurately by total cost descending', 'PASS');
+  } else {
+    recordTest('TC-BI-02', 'AI Travel BI Engine', `Department grouping mismatch: ${JSON.stringify(deptStats.breakdown)}`, 'FAIL');
+  }
+
+  // TC-BI-03: Anomaly Detection (Missing Price & Business Class)
+  const hasMissingPriceAlert = summaryStats.anomalies.some(a => a.includes('chưa có giá vé'));
+  const hasBusinessAlert = summaryStats.anomalies.some(a => a.includes('Business'));
+  if (hasMissingPriceAlert && hasBusinessAlert) {
+    recordTest('TC-BI-03', 'AI Travel BI Engine', 'Detects missing-price trips and Business class anomalies accurately', 'PASS');
+  } else {
+    recordTest('TC-BI-03', 'AI Travel BI Engine', `Anomalies missing: ${JSON.stringify(summaryStats.anomalies)}`, 'FAIL');
+  }
+
+  // TC-BI-04: BI Report Card Block Kit & Anti-AI Persona
+  const biCard = buildBIReportCard('C0CGLFPNW7R', '1700000.1', 'Tổng chi phí tháng 11?', deptStats, '• Ban Giám Đốc chiếm 80% tổng chi phí đã ghi nhận.');
+  const biCardJson = JSON.stringify(biCard);
+  const forbiddenEmojis = ['🤖', '🚀', '💡', '🧠', '✨', '✈️', '💰'];
+  const foundEmojis = forbiddenEmojis.filter(e => biCardJson.includes(e));
+  if (foundEmojis.length === 0 && biCardJson.includes('BÁO CÁO PHÂN TÍCH CÔNG TÁC') && biCardJson.includes('10.000.000 VND')) {
+    recordTest('TC-BI-04', 'AI Travel BI Engine', 'BI Block Kit card formats KPIs cleanly with zero robotic AI emojis', 'PASS');
+  } else {
+    recordTest('TC-BI-04', 'AI Travel BI Engine', `BI Card check failed: emojis=${foundEmojis.join(',')}`, 'FAIL');
+  }
+} catch (e) {
+  recordTest('TC-RBAC-01', 'Channel RBAC / BI', 'RBAC & BI test exception', 'FAIL', e.message);
+}
+
+// ============================================================================
+// 9. TEST SUMMARY REPORT
 // ============================================================================
 console.log('\n' + '='.repeat(80));
 console.log('TEST EXECUTION SUMMARY');

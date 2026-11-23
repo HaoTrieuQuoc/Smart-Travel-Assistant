@@ -36,9 +36,15 @@ variable "slack_signing_secret" {
 }
 
 variable "slack_admin_channel_id" {
-  description = "Slack channel ID for admin flight and audit alerts"
+  description = "Slack channel ID for admin flight, BI analytics, and audit alerts (Role: ADMIN_HR)"
   type        = string
   default     = "C0CGLFPNW7R"
+}
+
+variable "slack_employee_channel_id" {
+  description = "Slack channel ID for employee ticket submission only (Role: EMPLOYEE)"
+  type        = string
+  default     = "C0CH1CC22FL"
 }
 
 variable "google_sheet_id" {
