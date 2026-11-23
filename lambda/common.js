@@ -183,8 +183,8 @@ async function getSlackFileInfo(fileId) {
   return res.data?.file || null;
 }
 
-// Get recent files uploaded in a Slack channel
-async function getRecentChannelFiles(channelId, userId = null) {
+// Get recent files uploaded in a Slack channel strictly matching the current event timestamp
+async function getRecentChannelFiles(channelId, userId = null, referenceTs = null, maxAgeSeconds = 15) {
   const slackToken = process.env.SLACK_BOT_TOKEN;
   const res = await makeRequest(`https://slack.com/api/files.list?channel=${encodeURIComponent(channelId)}&count=5`, {
     method: 'GET',
@@ -192,20 +192,17 @@ async function getRecentChannelFiles(channelId, userId = null) {
   });
 
   if (res.data && res.data.ok && Array.isArray(res.data.files)) {
-    const nowSec = Math.floor(Date.now() / 1000);
-    // Ưu tiên file ảnh tải lên trong vòng 5 phút gần nhất
+    const refSec = referenceTs ? Math.floor(parseFloat(referenceTs)) : Math.floor(Date.now() / 1000);
+    // Chỉ nhận file thực sự đi kèm tin nhắn hiện tại (chênh lệch tối đa maxAgeSeconds, mặc định 15 giây)
+    // Tuyệt đối không fallback sang file cũ trong lịch sử kênh để tránh OCR nhầm khi người dùng nhắn tin văn bản thuần
     const recent = res.data.files.filter(f => {
       const fileTime = f.created || f.timestamp || 0;
-      const age = Math.abs(nowSec - fileTime);
+      const age = Math.abs(refSec - fileTime);
       const isUser = !userId || f.user === userId;
-      return age < 300 && isUser;
+      return age <= maxAgeSeconds && isUser;
     });
 
-    if (recent.length > 0) return recent;
-    // Fallback: nếu đồng hồ máy chủ chênh lệch nhẹ, lấy file mới nhất trong channel nếu có
-    if (res.data.files.length > 0) {
-      return [res.data.files[0]];
-    }
+    return recent;
   }
   return [];
 }

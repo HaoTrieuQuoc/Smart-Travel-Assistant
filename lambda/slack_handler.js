@@ -492,11 +492,12 @@ async function handleSlackEvent(event) {
     rawFiles = [event.file];
   }
 
-  // Slack API không gửi kèm `files` trong payload `app_mention`!
-  // Do đó, nếu rawFiles rỗng, ta chủ động lấy file ảnh vừa tải lên trong channel
-  if (rawFiles.length === 0 && channelId) {
+  // Slack API không gửi kèm `files` trong payload `app_mention`.
+  // Chỉ tra cứu file vừa tải lên trong vòng <= 15 giây khi là app_mention và không phải câu hỏi BI / sửa TRIP đã lưu.
+  const isTextOnlyAdminQuery = isLikelyBIQuery(userText) || /TRIP-\d{6}-\d{3}/i.test(userText);
+  if (rawFiles.length === 0 && channelId && event.type === 'app_mention' && !isTextOnlyAdminQuery) {
     try {
-      const recent = await getRecentChannelFiles(channelId, event.user);
+      const recent = await getRecentChannelFiles(channelId, event.user, event.ts, 15);
       if (recent && recent.length > 0) {
         rawFiles = recent;
       }

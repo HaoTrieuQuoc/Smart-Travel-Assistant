@@ -110,11 +110,20 @@ https.request = function(options, callback) {
             choices: [{ message: { content } }]
           }));
         } else {
-          res.emit('data', JSON.stringify({
-            ok: true,
-            ts: '1700000000.000200',
-            user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
-          }));
+          const urlPath = typeof options === 'object' ? (options.path || '') : '';
+          if (urlPath.includes('files.list')) {
+            // Mô phỏng kênh có file vé cũ từ nhiều ngày trước (tránh tái diễn lỗi OCR nhầm file cũ)
+            res.emit('data', JSON.stringify({
+              ok: true,
+              files: [{ id: 'F_OLD_TICKET', name: 'old_ticket.png', mimetype: 'image/png', user: 'U_ADMIN_1', created: 1600000000 }]
+            }));
+          } else {
+            res.emit('data', JSON.stringify({
+              ok: true,
+              ts: '1700000000.000200',
+              user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
+            }));
+          }
         }
         res.emit('end');
       });
