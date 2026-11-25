@@ -1,0 +1,110 @@
+[
+  {
+    "id": "k01",
+    "text": "Smart Travel Assistant automates corporate travel booking inside Slack, from reading a flight ticket to reporting and reminders."
+  },
+  {
+    "id": "k02",
+    "text": "There are two channels with two permission levels: one for employees, and one for HR."
+  },
+  {
+    "id": "k03",
+    "text": "An employee drops a flight ticket photo into the booking channel, and mentions the assistant."
+  },
+  {
+    "id": "k04",
+    "text": "Vision AI reads the passenger, flight, route, departure time and booking code."
+  },
+  {
+    "id": "k05",
+    "text": "It also turns airport codes into city names, and flags any price it cannot find."
+  },
+  {
+    "id": "k06",
+    "text": "A draft preview comes first. Nothing is saved until the user confirms."
+  },
+  {
+    "id": "k07",
+    "text": "Something wrong? Fix it with one plain sentence in the thread."
+  },
+  {
+    "id": "k08",
+    "text": "The assistant understands the request, updates the draft and posts a fresh preview."
+  },
+  {
+    "id": "k09",
+    "text": "The new preview shows the corrected department and purpose."
+  },
+  {
+    "id": "k10",
+    "text": "Prefer a form? Open the full edit modal, with fourteen fields."
+  },
+  {
+    "id": "k11",
+    "text": "Saving the form locks the previous preview, so nobody clicks a stale draft by mistake."
+  },
+  {
+    "id": "k12",
+    "text": "On confirm, the trip gets an ID and is written to two stores at once."
+  },
+  {
+    "id": "k13",
+    "text": "DynamoDB is the source of truth, with a SHA-256 row hash for audit."
+  },
+  {
+    "id": "k14",
+    "text": "Permissions follow the channel. Back in the employee channel, a report request is not allowed."
+  },
+  {
+    "id": "k15",
+    "text": "The assistant declines politely, and points to the HR channel."
+  },
+  {
+    "id": "k16",
+    "text": "The rule is enforced in code, by channel, not by trusting the user."
+  },
+  {
+    "id": "k17",
+    "text": "In the admin channel, HR asks a question in plain Vietnamese."
+  },
+  {
+    "id": "k18",
+    "text": "The AI only plans a read-only query. The numbers are computed in deterministic code, so there is no math hallucination."
+  },
+  {
+    "id": "k19",
+    "text": "The report shows totals, a breakdown by department, anomalies such as missing prices, and a short insight."
+  },
+  {
+    "id": "k20",
+    "text": "Admins can also edit a saved trip with a single sentence, for example filling in the missing ticket price."
+  },
+  {
+    "id": "k21",
+    "text": "The change is applied to both Google Sheets and DynamoDB."
+  },
+  {
+    "id": "k22",
+    "text": "And the assistant confirms exactly what was updated."
+  },
+  {
+    "id": "k23",
+    "text": "Every morning at eight, a scheduled job scans for flights departing within twenty-four hours."
+  },
+  {
+    "id": "k24",
+    "text": "It posts an alert with an AI-written checklist, then marks the trip as sent so it never repeats."
+  },
+  {
+    "id": "k25",
+    "text": "Finally, the Google Sheet mirrors every saved trip for finance."
+  },
+  {
+    "id": "k26",
+    "text": "That is twenty-three columns, with one new row for this trip."
+  },
+  {
+    "id": "k27",
+    "text": "All of this runs serverless on AWS, with near-zero cost when idle. That is Smart Travel Assistant."
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "app": {
+    "baseUrl": "https://app.slack.com",
+    "devCommand": "",
+    "viewport": { "width": 1920, "height": 1080 }
+  },
+  "auth": { "loginRequired": false },
+  "cursor": { "scale": 1.6, "color": "#0A0A0A" },
+  "camera": { "padding": 0.22, "maxZoom": 1.7, "transitionSec": 0.72 },
+  "speedup": { "toolWaitMax": 3, "preToolWaitMax": 2.5, "idleGapMax": 1.8, "idleGapMin": 9999 },
+  "frame": {
+    "preset": "macos-dark",
+    "canvasWidth": 1920,
+    "canvasHeight": 1080,
+    "wallpaper": "wave-purple-pink"
+  },
+  "narration": {
+    "provider": "none",
+    "voiceName": "Rachel",
+    "modelId": "eleven_multilingual_v2",
+    "stability": 0.6,
+    "apiKeyEnv": "ELEVENLABS_API_KEY"
+  },
+  "captions": { "enabled": true, "maxCharsPerLine": 60 },
+  "output": { "dir": "demos" }
+}

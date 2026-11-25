@@ -54,3 +54,11 @@ docs/*
 !docs/Idea.md
 !docs/idea.md
 
+
+# demo-studio
+demos/.auth/
+demos/**/renders/
+demos/node_modules/
+demos/_engine/.test/
+demos/assets/wallpapers/
+.agents/skills/film-demo/assets/wallpapers/

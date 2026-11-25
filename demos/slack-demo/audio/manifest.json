@@ -1,0 +1,324 @@
+{
+  "Smart Travel Assistant automates corporate travel booking inside Slack.": {
+    "id": "n01",
+    "file": "demos\\slack-demo\\audio\\n01.mp3",
+    "hash": "518cbbbd74",
+    "voice": "af_heart",
+    "dur": 4.8
+  },
+  "Two channels, two permission levels: employees book, HR administers.": {
+    "id": "n02",
+    "file": "demos\\slack-demo\\audio\\n02.mp3",
+    "hash": "96f4a92a15",
+    "voice": "af_heart",
+    "dur": 4.875
+  },
+  "An employee drops a flight ticket photo into the booking channel.": {
+    "id": "n03",
+    "file": "demos\\slack-demo\\audio\\n03.mp3",
+    "hash": "f8c858f6a7",
+    "voice": "af_heart",
+    "dur": 4.225958
+  },
+  "Vision AI reads the passenger, flight, route, departure time and PNR.": {
+    "id": "n04",
+    "file": "demos\\slack-demo\\audio\\n04.mp3",
+    "hash": "e9b376e420",
+    "voice": "af_heart",
+    "dur": 5.25
+  },
+  "A draft preview comes first. Nothing is saved until the user confirms.": {
+    "id": "m06",
+    "file": "demos\\slack-demo\\audio\\m06.mp3",
+    "hash": "f4c59f0a8f",
+    "voice": "af_heart",
+    "dur": 5.075
+  },
+  "Something wrong? Fix it with one plain sentence in the thread.": {
+    "id": "m07",
+    "file": "demos\\slack-demo\\audio\\m07.mp3",
+    "hash": "051c1210e2",
+    "voice": "af_heart",
+    "dur": 3.975
+  },
+  "The bot updates the draft and posts a fresh preview.": {
+    "id": "n07",
+    "file": "demos\\slack-demo\\audio\\n07.mp3",
+    "hash": "af5e16b30a",
+    "voice": "af_heart",
+    "dur": 3.55
+  },
+  "Prefer a form? Open the full edit modal with 14 fields.": {
+    "id": "n08",
+    "file": "demos\\slack-demo\\audio\\n08.mp3",
+    "hash": "d1bc5bfcd2",
+    "voice": "af_heart",
+    "dur": 4.375
+  },
+  "The superseded preview is locked, so nobody clicks a stale draft by mistake.": {
+    "id": "n09",
+    "file": "demos\\slack-demo\\audio\\n09.mp3",
+    "hash": "31fc9b4c79",
+    "voice": "af_heart",
+    "dur": 5.025
+  },
+  "On confirm, the trip gets an ID and is written to two stores at once.": {
+    "id": "m12",
+    "file": "demos\\slack-demo\\audio\\m12.mp3",
+    "hash": "6240d6d73d",
+    "voice": "af_heart",
+    "dur": 4.825958
+  },
+  "DynamoDB is the source of truth, with a SHA-256 row hash for audit.": {
+    "id": "n11",
+    "file": "demos\\slack-demo\\audio\\n11.mp3",
+    "hash": "96ba44a546",
+    "voice": "af_heart",
+    "dur": 5.9
+  },
+  "Google Sheets mirrors it for finance: 23 columns, one new row.": {
+    "id": "n12",
+    "file": "demos\\slack-demo\\audio\\n12.mp3",
+    "hash": "a76aea87ed",
+    "voice": "af_heart",
+    "dur": 4.95
+  },
+  "Permissions follow the channel. Employees cannot query reports.": {
+    "id": "n13",
+    "file": "demos\\slack-demo\\audio\\n13.mp3",
+    "hash": "858f1b6221",
+    "voice": "af_heart",
+    "dur": 4.25
+  },
+  "The bot declines politely and explains the policy.": {
+    "id": "n14",
+    "file": "demos\\slack-demo\\audio\\n14.mp3",
+    "hash": "31e2d453df",
+    "voice": "af_heart",
+    "dur": 3.65
+  },
+  "In the admin channel, HR asks in plain Vietnamese.": {
+    "id": "n15",
+    "file": "demos\\slack-demo\\audio\\n15.mp3",
+    "hash": "9ffd78b90a",
+    "voice": "af_heart",
+    "dur": 4.075
+  },
+  "AI only plans the query. Numbers are computed in deterministic code, so no math hallucination.": {
+    "id": "n16",
+    "file": "demos\\slack-demo\\audio\\n16.mp3",
+    "hash": "e271c573a8",
+    "voice": "af_heart",
+    "dur": 7.375
+  },
+  "The report shows totals, breakdowns, anomalies such as missing prices, and a short insight.": {
+    "id": "n17",
+    "file": "demos\\slack-demo\\audio\\n17.mp3",
+    "hash": "8138141cbb",
+    "voice": "af_heart",
+    "dur": 6.2
+  },
+  "Admins can also edit a saved trip with one sentence.": {
+    "id": "n18",
+    "file": "demos\\slack-demo\\audio\\n18.mp3",
+    "hash": "dba4c10b44",
+    "voice": "af_heart",
+    "dur": 3.775
+  },
+  "The change is written to both Sheets and DynamoDB.": {
+    "id": "n19",
+    "file": "demos\\slack-demo\\audio\\n19.mp3",
+    "hash": "65992f212f",
+    "voice": "af_heart",
+    "dur": 3.55
+  },
+  "Every morning at 08:00 a scheduled job scans flights departing within 24 hours.": {
+    "id": "n20",
+    "file": "demos\\slack-demo\\audio\\n20.mp3",
+    "hash": "6f7408544f",
+    "voice": "af_heart",
+    "dur": 7.1
+  },
+  "The bot posts an alert with an AI-written checklist and marks it sent, so it never repeats.": {
+    "id": "n21",
+    "file": "demos\\slack-demo\\audio\\n21.mp3",
+    "hash": "070697201f",
+    "voice": "af_heart",
+    "dur": 5.625
+  },
+  "Serverless on AWS, near-zero cost when idle. Smart Travel Assistant.": {
+    "id": "n22",
+    "file": "demos\\slack-demo\\audio\\n22.mp3",
+    "hash": "8ace4e7590",
+    "voice": "af_heart",
+    "dur": 5.125
+  },
+  "Smart Travel Assistant automates corporate travel booking inside Slack, from reading a flight ticket to reporting and reminders.": {
+    "id": "m01",
+    "file": "demos\\slack-demo\\audio\\m01.mp3",
+    "hash": "0a22cec05a",
+    "voice": "af_heart",
+    "dur": 8.275
+  },
+  "There are two channels with two permission levels: one for employees, and one for HR.": {
+    "id": "m02",
+    "file": "demos\\slack-demo\\audio\\m02.mp3",
+    "hash": "f5559e3c6a",
+    "voice": "af_heart",
+    "dur": 5.475
+  },
+  "An employee drops a flight ticket photo into the booking channel, and mentions the assistant.": {
+    "id": "m03",
+    "file": "demos\\slack-demo\\audio\\m03.mp3",
+    "hash": "18f1455522",
+    "voice": "af_heart",
+    "dur": 5.675
+  },
+  "Vision AI reads the passenger, flight, route, departure time and booking code.": {
+    "id": "m04",
+    "file": "demos\\slack-demo\\audio\\m04.mp3",
+    "hash": "9a79a476ba",
+    "voice": "af_heart",
+    "dur": 5.4
+  },
+  "It also turns airport codes into city names, and flags any price it cannot find.": {
+    "id": "m05",
+    "file": "demos\\slack-demo\\audio\\m05.mp3",
+    "hash": "f1aa66a2c6",
+    "voice": "af_heart",
+    "dur": 5.625
+  },
+  "The assistant understands the request, updates the draft and posts a fresh preview.": {
+    "id": "m08",
+    "file": "demos\\slack-demo\\audio\\m08.mp3",
+    "hash": "1395330a8d",
+    "voice": "af_heart",
+    "dur": 5.425958
+  },
+  "The new preview shows the corrected department and purpose.": {
+    "id": "m09",
+    "file": "demos\\slack-demo\\audio\\m09.mp3",
+    "hash": "8bb74770e0",
+    "voice": "af_heart",
+    "dur": 4.025
+  },
+  "Prefer a form? Open the full edit modal, with fourteen fields.": {
+    "id": "m10",
+    "file": "demos\\slack-demo\\audio\\m10.mp3",
+    "hash": "11e8a9df73",
+    "voice": "af_heart",
+    "dur": 4.425
+  },
+  "Saving the form locks the previous preview, so nobody clicks a stale draft by mistake.": {
+    "id": "m11",
+    "file": "demos\\slack-demo\\audio\\m11.mp3",
+    "hash": "cf17b227fd",
+    "voice": "af_heart",
+    "dur": 5.475
+  },
+  "DynamoDB is the source of truth, with a SHA-256 row hash for audit. Google Sheets then mirrors it for finance.": {
+    "id": "m13",
+    "file": "demos\\slack-demo\\audio\\m13.mp3",
+    "hash": "e5675f7e26",
+    "voice": "af_heart",
+    "dur": 8.85
+  },
+  "That is twenty-three columns, and one new row for this trip.": {
+    "id": "m14",
+    "file": "demos\\slack-demo\\audio\\m14.mp3",
+    "hash": "b31b84fd18",
+    "voice": "af_heart",
+    "dur": 3.75
+  },
+  "Permissions follow the channel. Back in the employee channel, a report request is not allowed.": {
+    "id": "m15",
+    "file": "demos\\slack-demo\\audio\\m15.mp3",
+    "hash": "2352bc2b73",
+    "voice": "af_heart",
+    "dur": 5.975
+  },
+  "The assistant declines politely, and points to the HR channel.": {
+    "id": "m16",
+    "file": "demos\\slack-demo\\audio\\m16.mp3",
+    "hash": "9ad0528be1",
+    "voice": "af_heart",
+    "dur": 4.275
+  },
+  "The rule is enforced in code, by channel, not by trusting the user.": {
+    "id": "m17",
+    "file": "demos\\slack-demo\\audio\\m17.mp3",
+    "hash": "86e6d22fbe",
+    "voice": "af_heart",
+    "dur": 4.9
+  },
+  "In the admin channel, HR asks a question in plain Vietnamese.": {
+    "id": "m18",
+    "file": "demos\\slack-demo\\audio\\m18.mp3",
+    "hash": "2a25afbfae",
+    "voice": "af_heart",
+    "dur": 4.5
+  },
+  "The AI only plans a read-only query. The numbers are computed in deterministic code, so there is no math hallucination.": {
+    "id": "m19",
+    "file": "demos\\slack-demo\\audio\\m19.mp3",
+    "hash": "104929a4bb",
+    "voice": "af_heart",
+    "dur": 8.75
+  },
+  "The report shows totals, a breakdown by department, anomalies such as missing prices, and a short insight.": {
+    "id": "m20",
+    "file": "demos\\slack-demo\\audio\\m20.mp3",
+    "hash": "135446a471",
+    "voice": "af_heart",
+    "dur": 6.975
+  },
+  "Admins can also edit a saved trip with a single sentence.": {
+    "id": "m21",
+    "file": "demos\\slack-demo\\audio\\m21.mp3",
+    "hash": "864f16cfef",
+    "voice": "af_heart",
+    "dur": 4.1
+  },
+  "The change is applied to both Google Sheets and DynamoDB.": {
+    "id": "m22",
+    "file": "demos\\slack-demo\\audio\\m22.mp3",
+    "hash": "0880f51438",
+    "voice": "af_heart",
+    "dur": 4.05
+  },
+  "And the assistant confirms exactly what was updated.": {
+    "id": "m23",
+    "file": "demos\\slack-demo\\audio\\m23.mp3",
+    "hash": "ed7fb9c41e",
+    "voice": "af_heart",
+    "dur": 3.8
+  },
+  "Every morning at eight, a scheduled job scans for flights departing within twenty-four hours.": {
+    "id": "m24",
+    "file": "demos\\slack-demo\\audio\\m24.mp3",
+    "hash": "cb585123d1",
+    "voice": "af_heart",
+    "dur": 5.925
+  },
+  "It posts an alert with an AI-written checklist, then marks the trip as sent so it never repeats.": {
+    "id": "m25",
+    "file": "demos\\slack-demo\\audio\\m25.mp3",
+    "hash": "19c405b2e0",
+    "voice": "af_heart",
+    "dur": 5.975
+  },
+  "All of this runs serverless on AWS, with near-zero cost when idle. That is Smart Travel Assistant.": {
+    "id": "m26",
+    "file": "demos\\slack-demo\\audio\\m26.mp3",
+    "hash": "a98a7500e2",
+    "voice": "af_heart",
+    "dur": 7.325
+  },
+  "Admins can also edit a saved trip with a single sentence, for example filling in the missing ticket price.": {
+    "id": "m21",
+    "file": "demos\\slack-demo\\audio\\m21.mp3",
+    "hash": "2a00d8a9a4",
+    "voice": "af_heart",
+    "dur": 6.875
+  }
+}
