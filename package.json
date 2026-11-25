@@ -13,6 +13,7 @@
     "reminder": "node scripts/reminder_worker.js",
     "start:local": "node scripts/slack_server.js",
     "test:visual": "python tests/visual_diagram_check.py",
+    "bundle:code": "node scripts/build_code_bundle.js",
     "lint:syntax": "node --check lambda/common.js && node --check lambda/ai_ocr_service.js && node --check lambda/bi_analytics_service.js && node --check lambda/slack_handler.js && node --check lambda/reminder_cron.js"
   },
   "keywords": [
