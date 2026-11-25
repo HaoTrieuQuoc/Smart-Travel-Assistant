@@ -1,150 +1,161 @@
 {
   "title": "Smart Travel Assistant - AWS Serverless Architecture",
-  "intro": "Event-driven corporate travel automation platform running on AWS Serverless (ap-southeast-2 Sydney), Slack Block Kit, and Multimodal Generative AI.",
-  "canvas": { "w": 1440, "h": 720 },
+  "intro": "Event-driven corporate travel automation platform on AWS Serverless (ap-southeast-2 Sydney) featuring Vision OCR, Channel-Based RBAC, Zero-Hallucination AI Travel BI, Dual-Write Audit Sync, and 24h Flight Reminders.",
+  "canvas": { "w": 1440, "h": 740 },
   "flows": [
     { "id": "ocr", "label": "Ticket Ingestion & Vision OCR", "color": "#2563EB" },
     { "id": "confirm", "label": "Review, Modal Edit & Dual-Write", "color": "#E07A00" },
+    { "id": "bi", "label": "Channel RBAC & AI Travel BI", "color": "#7C3AED" },
     { "id": "remind", "label": "24h Flight Reminder & Sync", "color": "#0E8F7E" }
   ],
   "groups": [
-    { "type": "corp", "x": 16, "y": 30, "w": 240, "h": 620, "label": "Corporate Slack", "sub": "Workspace" },
-    { "type": "aws-cloud", "x": 296, "y": 30, "w": 744, "h": 620, "label": "AWS Cloud", "sub": "Production Account" },
-    { "type": "region", "x": 310, "y": 60, "w": 716, "h": 576, "label": "Region", "sub": "ap-southeast-2 (Sydney)" },
-    { "type": "services", "x": 1080, "y": 30, "w": 340, "h": 620, "label": "Enterprise Integrations", "sub": "SaaS & AI APIs" }
+    { "type": "corp", "x": 16, "y": 30, "w": 224, "h": 640, "label": "Corporate Slack", "sub": "RBAC" },
+    { "type": "aws-cloud", "x": 312, "y": 30, "w": 728, "h": 640, "label": "AWS Cloud", "sub": "Production Account" },
+    { "type": "region", "x": 326, "y": 60, "w": 700, "h": 596, "label": "Region", "sub": "ap-southeast-2 (Sydney)" },
+    { "type": "services", "x": 1084, "y": 30, "w": 340, "h": 640, "label": "Enterprise Integrations", "sub": "SaaS & AI APIs" }
   ],
   "nodes": [
     {
       "id": "traveler",
       "icon": "res-users",
-      "x": 56,
+      "x": 48,
       "y": 120,
       "w": 160,
-      "label": "Business Travelers",
-      "sub": ["Employees & Managers"],
-      "detail": ["Business Travelers", "Slack User", "Uploads boarding passes, requests travel PRs via chat, and confirms itineraries."]
+      "label": "Travelers & HR",
+      "sub": ["EMPLOYEE & ADMIN_HR"],
+      "detail": ["Travelers and HR Admins", "Slack Users", "Employees upload tickets in #travel-booking; HR admins run AI Travel BI, edit saved trips, and use /travel-admin in #biz-admin-alerts."]
     },
     {
       "id": "slack_app",
       "icon": "res-chat",
-      "x": 56,
-      "y": 400,
+      "x": 48,
+      "y": 420,
       "w": 160,
       "label": "Slack Platform",
-      "sub": ["Channels & Modals"],
-      "detail": ["Slack Platform", "Slack Web API", "Renders Block Kit preview cards, handles 14-field edit modal forms, and delivers admin alerts."]
+      "sub": ["RBAC Channels & Modals"],
+      "detail": ["Slack Platform", "Slack Web API", "Separates #travel-booking (EMPLOYEE) and #biz-admin-alerts (ADMIN_HR), renders Block Kit preview and BI report cards, and hosts 14-field edit modals."]
     },
     {
       "id": "apigw",
       "icon": "amazon-api-gateway",
-      "x": 330,
+      "x": 340,
       "y": 120,
       "w": 150,
       "label": "API Gateway",
       "sub": ["HTTP API v2"],
-      "detail": ["Amazon API Gateway", "Ingress Gateway", "Terminates HTTPS webhooks, executes routing for /events, /commands, /interactions with sub-100ms ACK."]
+      "detail": ["Amazon API Gateway", "HTTP API v2", "Terminates TLS 1.3 webhooks and routes /slack/events, /slack/commands, and /slack/interactions to Slack Handler Lambda."]
     },
     {
       "id": "eventbridge",
       "icon": "amazon-eventbridge",
-      "x": 330,
-      "y": 400,
+      "x": 340,
+      "y": 420,
       "w": 150,
       "label": "EventBridge",
       "sub": ["Daily Cron 08:00 AM"],
-      "detail": ["Amazon EventBridge", "Event Scheduler", "Triggers daily departure scans at 08:00 AM VN (01:00 UTC) with automated retry."]
+      "detail": ["Amazon EventBridge", "Event Scheduler", "Triggers daily 24h departure scans at 08:00 AM VN (cron(0 1 * * ? *)) with managed retries."]
     },
     {
       "id": "slack_lambda",
       "icon": "aws-lambda",
-      "x": 560,
+      "x": 566,
       "y": 120,
       "w": 160,
       "label": "Slack Handler",
       "sub": ["Lambda Node.js 20.x"],
-      "detail": ["Slack Handler Lambda", "AWS Lambda", "Verifies HMAC-SHA256 signatures, normalizes IATA cities/names, coordinates AI OCR, and commits records."]
+      "detail": ["Slack Handler Lambda", "AWS Lambda", "Verifies HMAC-SHA256, returns sub-80ms async Fast-ACK, enforces Channel RBAC, runs Vision OCR normalization and Deterministic AI Travel BI, and commits Dual-Write records."]
     },
     {
       "id": "reminder_lambda",
       "icon": "aws-lambda",
-      "x": 560,
-      "y": 400,
+      "x": 566,
+      "y": 420,
       "w": 160,
       "label": "Flight Reminder",
       "sub": ["Lambda Node.js 20.x"],
-      "detail": ["Flight Reminder Lambda", "AWS Lambda", "Scans upcoming departures within 24h, requests AI travel guides, dispatches alerts, and updates status."]
+      "detail": ["Flight Reminder Lambda", "AWS Lambda", "Scans APPROVED flights departing within 24h, generates AI destination guides, posts alerts to #biz-admin-alerts, and syncs SENT status to DynamoDB and Google Sheets Column U."]
     },
     {
       "id": "dynamodb",
       "icon": "amazon-dynamodb",
-      "x": 800,
+      "x": 804,
       "y": 120,
       "w": 160,
       "label": "DynamoDB",
       "sub": ["Table: TravelBookings"],
-      "detail": ["Amazon DynamoDB", "NoSQL Database", "Stores active bookings, temporary channel drafts (DRAFT#channel_id), and SHA-256 row hashes."]
+      "detail": ["Amazon DynamoDB", "NoSQL Database", "Stores confirmed trips with SHA-256 row_hash, temporary DRAFT#channel states, atomic EVENT# deduplication locks, and serves sub-10ms BI analytics scans."]
     },
     {
       "id": "cloudwatch",
       "icon": "amazon-cloudwatch",
-      "x": 800,
-      "y": 400,
+      "x": 804,
+      "y": 420,
       "w": 160,
       "label": "CloudWatch",
       "sub": ["Logs & Alarms"],
-      "detail": ["Amazon CloudWatch", "Observability", "Collects Lambda execution logs, API request metrics, and system alarms with 14-day retention."]
+      "detail": ["Amazon CloudWatch", "Observability", "Collects Lambda execution logs, API Gateway telemetry, and error traces with 14-day retention."]
     },
     {
       "id": "openrouter",
       "icon": "res-generic-application",
-      "x": 1160,
+      "x": 1164,
       "y": 120,
       "w": 180,
       "label": "OpenRouter AI",
-      "sub": ["NVIDIA Nemotron VL"],
-      "detail": ["OpenRouter AI Gateway", "Multimodal Generative AI", "Parses boarding passes and tickets via Vision AI and drafts bespoke luggage checklists."]
+      "sub": ["NVIDIA VL & Free Stack"],
+      "detail": ["OpenRouter AI Gateway", "Multimodal Generative AI", "Runs Vision OCR (nvidia/nemotron-3.5-super-vl:free), BI query planning and executive insight synthesis, conversational edits, and 24h travel guides."]
     },
     {
       "id": "gsheets",
       "icon": "res-data-table",
-      "x": 1160,
-      "y": 400,
+      "x": 1164,
+      "y": 420,
       "w": 180,
       "label": "Google Sheets",
       "sub": ["Tab: 23 Columns"],
-      "detail": ["Google Sheets API v4", "Spreadsheet Enterprise", "Provides business transparency with 23 standardized itinerary columns and audit validation status."]
+      "detail": ["Google Sheets API v4", "Enterprise Audit Sheet", "Maintains 23 standardized itinerary columns (A to W) authenticated via RSA-SHA256 Service Account JWT, including Column U reminders and Column W audit notes."]
     }
   ],
   "edges": [
-    { "flow": "ocr", "points": [[136, 204], [136, 400]] },
-    { "flow": "ocr", "points": [[216, 420], [280, 420], [280, 140], [330, 140]] },
-    { "flow": "ocr", "points": [[480, 140], [520, 140], [520, 140], [560, 140]] },
-    { "flow": "ocr", "points": [[640, 120], [640, 86], [1250, 86], [1250, 120]], "start": true, "end": true },
-    { "flow": "ocr", "points": [[720, 145], [755, 145], [755, 145], [800, 145]] },
-    { "flow": "ocr", "points": [[620, 204], [620, 260], [260, 260], [260, 420], [216, 420]] },
-    { "flow": "confirm", "points": [[216, 440], [270, 440], [270, 160], [330, 160]] },
-    { "flow": "confirm", "points": [[480, 160], [520, 160], [520, 160], [560, 160]] },
-    { "flow": "confirm", "points": [[720, 165], [755, 165], [755, 165], [800, 165]] },
-    { "flow": "confirm", "points": [[660, 204], [660, 280], [1090, 280], [1090, 420], [1160, 420]] },
-    { "flow": "remind", "points": [[480, 425], [520, 425], [520, 425], [560, 425]] },
-    { "flow": "remind", "points": [[660, 400], [660, 310], [880, 310], [880, 204]], "start": true, "end": true },
-    { "flow": "remind", "points": [[680, 400], [680, 330], [1110, 330], [1110, 150], [1160, 150]], "start": true, "end": true },
-    { "flow": "remind", "points": [[700, 400], [700, 350], [1120, 350], [1120, 440], [1160, 440]] },
-    { "flow": "remind", "points": [[620, 484], [620, 530], [245, 530], [245, 450], [216, 450]] },
-    { "points": [[720, 185], [750, 185], [750, 415], [800, 415]], "dashed": true }
+    { "flow": "ocr", "points": [[128, 204], [128, 420]] },
+    { "flow": "ocr", "points": [[208, 432], [254, 432], [254, 130], [340, 130]] },
+    { "flow": "ocr", "points": [[490, 130], [566, 130]] },
+    { "flow": "ocr", "points": [[634, 120], [634, 86], [1242, 86], [1242, 120]], "start": true, "end": true },
+    { "flow": "ocr", "points": [[726, 130], [804, 130]] },
+    { "flow": "ocr", "points": [[614, 204], [614, 246], [30, 246], [30, 446], [48, 446]] },
+
+    { "flow": "confirm", "points": [[208, 448], [272, 448], [272, 146], [340, 146]] },
+    { "flow": "confirm", "points": [[490, 146], [566, 146]] },
+    { "flow": "confirm", "points": [[726, 146], [804, 146]] },
+    { "flow": "confirm", "points": [[646, 204], [646, 272], [1100, 272], [1100, 434], [1164, 434]] },
+
+    { "flow": "bi", "points": [[208, 464], [290, 464], [290, 162], [340, 162]] },
+    { "flow": "bi", "points": [[490, 162], [566, 162]] },
+    { "flow": "bi", "points": [[726, 162], [804, 162]], "start": true, "end": true },
+    { "flow": "bi", "points": [[658, 120], [658, 102], [1266, 102], [1266, 120]], "start": true, "end": true },
+
+    { "flow": "remind", "points": [[490, 446], [566, 446]] },
+    { "flow": "remind", "points": [[626, 420], [626, 316], [884, 316], [884, 204]], "start": true, "end": true },
+    { "flow": "remind", "points": [[646, 420], [646, 336], [1118, 336], [1118, 152], [1164, 152]], "start": true, "end": true },
+    { "flow": "remind", "points": [[666, 420], [666, 356], [1136, 356], [1136, 456], [1164, 456]] },
+    { "flow": "remind", "points": [[646, 504], [646, 566], [128, 566], [128, 504]] },
+
+    { "points": [[676, 204], [676, 294], [762, 294], [762, 436], [804, 436]], "dashed": true }
   ],
   "connectors": [
-    { "points": [[720, 426], [800, 426]] }
+    { "points": [[726, 450], [804, 450]] }
   ],
   "badges": [
-    { "flow": "ocr", "x": 136, "y": 290 },
-    { "flow": "confirm", "x": 270, "y": 320 },
-    { "flow": "remind", "x": 510, "y": 425 }
+    { "flow": "ocr", "x": 128, "y": 300 },
+    { "flow": "confirm", "x": 272, "y": 325 },
+    { "flow": "bi", "x": 290, "y": 385 },
+    { "flow": "remind", "x": 524, "y": 446 }
   ],
   "labels": [
-    { "flow": "ocr", "x": 146, "y": 290, "text": "Upload ticket" },
-    { "flow": "confirm", "x": 235, "y": 320, "text": "Modal Submit", "anchor": "end" },
-    { "flow": "remind", "x": 510, "y": 410, "text": "Daily Cron" }
+    { "flow": "ocr", "x": 116, "y": 304, "text": "Upload", "anchor": "end" },
+    { "flow": "confirm", "x": 785, "y": 264, "text": "Dual-Write Sheets", "anchor": "middle" },
+    { "flow": "bi", "x": 765, "y": 114, "text": "BI Query", "anchor": "middle" },
+    { "flow": "remind", "x": 524, "y": 428, "text": "Daily Cron", "anchor": "middle" }
   ],
   "sections": [
     {
@@ -153,15 +164,19 @@
       "items": [
         {
           "lead": "Ticket Ingestion & Vision OCR:",
-          "text": "Traveler uploads flight ticket image in Slack. API Gateway acknowledges under 100ms and triggers async Slack Handler Lambda, which extracts itinerary via OpenRouter NVIDIA Multimodal Vision AI, stages a temporary draft in DynamoDB, and posts an interactive Block Kit preview card."
+          "text": "Traveler uploads a flight ticket image in Slack. API Gateway returns HTTP 200 in under 80ms via async Lambda self-invocation, deduplicates events in DynamoDB, extracts itinerary JSON via OpenRouter NVIDIA Vision AI, normalizes IATA cities and prices, stages a DRAFT# record, and posts a Block Kit preview card."
         },
         {
           "lead": "Review, Modal Edit & Dual-Write:",
-          "text": "Traveler can click [Chỉnh sửa] to adjust details in a 14-field Slack modal form, or click [Xác nhận] to commit. The handler dual-writes the record into Amazon DynamoDB and Google Sheets (23 columns) with an idempotent SHA-256 row hash."
+          "text": "User edits via the 14-field Slack modal or thread reply (automatically disabling buttons on superseded cards), then clicks [Xac nhan] to commit. Slack Handler dual-writes 23 columns to Google Sheets (RSA-SHA256 JWT) and Amazon DynamoDB with a SHA-256 row_hash."
+        },
+        {
+          "lead": "Channel RBAC & AI Travel BI:",
+          "text": "Channel-Based RBAC blocks admin commands and financial prompts in #travel-booking (EMPLOYEE). In #biz-admin-alerts (ADMIN_HR), natural language BI questions run through a 3-stage Zero-Hallucination pipeline: AI Query Planner, Deterministic JS Engine over DynamoDB, and AI Executive Synthesizer."
         },
         {
           "lead": "24h Flight Reminder & Sync:",
-          "text": "Amazon EventBridge triggers Flight Reminder Lambda daily at 08:00 AM VN. It queries DynamoDB for flights departing within 24h, prompts AI for packing tips and destination survival guide, posts alert to #biz-admin-alerts, and marks status SENT on both DynamoDB and Google Sheets."
+          "text": "Amazon EventBridge triggers Flight Reminder Lambda daily at 08:00 AM VN. It scans DynamoDB for APPROVED flights departing within 24h, generates an AI destination guide, posts alerts to #biz-admin-alerts, and syncs status SENT to both DynamoDB and Google Sheets Column U."
         }
       ]
     }

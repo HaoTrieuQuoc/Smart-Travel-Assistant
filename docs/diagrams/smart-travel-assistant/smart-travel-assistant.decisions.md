@@ -2,14 +2,14 @@
 diagram: "smart-travel-assistant"
 document: "decisions"
 prefix: "STA"
-updated: "2026-11-18"
+updated: "2026-11-25"
 ---
 
 # Smart Travel Assistant - AWS Serverless Architecture - Decisions
 
 ## Next
 
-All architecture routes and components are verified and stamped.
+All architecture routes (including Channel RBAC and AI Travel BI) and visual checks are verified and stamped.
 
 ## Decisions
 
@@ -42,5 +42,11 @@ All architecture routes and components are verified and stamped.
 - Why: Guarantees zero occlusion of intermediate service boxes (API Gateway, DynamoDB, CloudWatch) while maintaining compliance with layout rules.
 - Breaks if ignored: Flow lines obscuring component icons, text labels, and service boundaries.
 - Rejected: Straight direct lines between distant nodes.
+
+### STA-D6: Add Flow 4 for Channel-Based RBAC and Zero-Hallucination AI Travel BI
+- Decision: Represent Channel-Based RBAC (#travel-booking EMPLOYEE vs #biz-admin-alerts ADMIN_HR) and the 3-stage Deterministic AI Travel BI pipeline (lambda/bi_analytics_service.js) as Flow 4 (purple #7C3AED) in the architecture diagram.
+- Why: The codebase evolved beyond OCR and reminders to include strict channel access control and deterministic financial analytics over DynamoDB; omitting it caused architectural drift between code and docs.
+- Breaks if ignored: Architecture diagrams and deployment guide remain outdated relative to the live Lambda handlers and Terraform RBAC channel variables.
+- Rejected: Merging BI analytics silently into Flow 2, which would obscure the read-only deterministic analytics path and RBAC enforcement.
 
 ## Open
