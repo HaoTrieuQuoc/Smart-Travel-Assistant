@@ -22,6 +22,18 @@ async function invokeLambdaAsync(functionName, payload) {
   }));
 }
 
+// DynamoDB Scan trả tối đa 1MB mỗi lần: đọc tiếp đến khi hết LastEvaluatedKey
+async function scanAll(params) {
+  const items = [];
+  let lastKey;
+  do {
+    const page = await docClient.send(new ScanCommand({ ...params, ExclusiveStartKey: lastKey }));
+    items.push(...(page.Items || []));
+    lastKey = page.LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
 // Helper: HTTP/HTTPS Request
 function makeRequest(urlStr, options = {}, postData = null) {
   return new Promise((resolve, reject) => {
@@ -272,6 +284,7 @@ module.exports = {
   QueryCommand,
   UpdateCommand,
   ScanCommand,
+  scanAll,
   makeRequest,
   getGoogleAccessToken,
   downloadSlackFile,

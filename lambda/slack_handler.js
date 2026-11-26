@@ -26,7 +26,7 @@ const {
   DeleteCommand,
   QueryCommand,
   UpdateCommand,
-  ScanCommand,
+  scanAll,
   makeRequest,
   getGoogleAccessToken,
   downloadSlackFile,
@@ -46,7 +46,7 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 // Verify Slack Request Signature
 function verifySlackSignature(event) {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  if (!signingSecret) return true; // Skip if not set
+  if (!signingSecret) return false; // Fail closed: thiếu secret thì từ chối mọi request
 
   const headers = event.headers || {};
   const signature = headers['x-slack-signature'] || headers['X-Slack-Signature'];
@@ -61,7 +61,10 @@ function verifySlackSignature(event) {
   const sigBasestring = `v0:${timestamp}:${body}`;
   const mySignature = 'v0=' + crypto.createHmac('sha256', signingSecret).update(sigBasestring, 'utf8').digest('hex');
 
-  return crypto.timingSafeEqual(Buffer.from(mySignature, 'utf8'), Buffer.from(signature, 'utf8'));
+  const expected = Buffer.from(mySignature, 'utf8');
+  const received = Buffer.from(signature, 'utf8');
+  // timingSafeEqual ném lỗi nếu hai buffer khác độ dài
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 // Dictionary chuẩn hóa thành phố & mã IATA sân bay
@@ -823,10 +826,8 @@ async function handleSlackEvent(event) {
           text: "Đang truy xuất dữ liệu TravelBookings và tổng hợp báo cáo phân tích..."
         });
 
-        const scanRes = await docClient.send(new ScanCommand({
-          TableName: DYNAMODB_TABLE
-        }));
-        const stats = executeBIQuery(scanRes.Items || [], biPlan);
+        const items = await scanAll({ TableName: DYNAMODB_TABLE });
+        const stats = executeBIQuery(items, biPlan);
 
         let summary = '';
         try {
@@ -920,6 +921,12 @@ exports.handler = async (event, context) => {
     console.log('Running as async worker for Slack event:', event.slackEvent.type);
     await handleSlackEvent(event.slackEvent);
     return { statusCode: 200, body: 'OK' };
+  }
+
+  // Mọi request HTTP phải có chữ ký Slack hợp lệ (async worker ở trên được gọi nội bộ qua IAM)
+  if (!verifySlackSignature(event)) {
+    console.warn('Rejected request with invalid or missing Slack signature');
+    return { statusCode: 401, body: 'Invalid signature' };
   }
 
   const headers = event.headers || {};

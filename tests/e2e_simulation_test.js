@@ -134,6 +134,15 @@ https.request = function(options, callback) {
 
 const { handler } = require('../lambda/slack_handler');
 
+// Giả lập Slack ký request trước khi gửi vào API Gateway
+const crypto = require('crypto');
+process.env.SLACK_SIGNING_SECRET = 'e2e_test_signing_secret';
+function signed(event) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sig = 'v0=' + crypto.createHmac('sha256', process.env.SLACK_SIGNING_SECRET).update(`v0:${ts}:${event.body}`).digest('hex');
+  return { ...event, headers: { 'x-slack-request-timestamp': ts, 'x-slack-signature': sig } };
+}
+
 // Track intercepted outbound Slack messages
 const postedMessages = [];
 const common = require('../lambda/common');
@@ -162,10 +171,10 @@ async function runE2E() {
   // FLOW 1: URL Verification Challenge
   // --------------------------------------------------------------------------
   try {
-    const res = await handler({
+    const res = await handler(signed({
       rawPath: '/slack/events',
       body: JSON.stringify({ type: 'url_verification', challenge: 'agy_challenge_token_456' })
-    }, {});
+    }), {});
 
     const body = JSON.parse(res.body);
     const pass = res.statusCode === 200 && body.challenge === 'agy_challenge_token_456';
@@ -257,10 +266,10 @@ async function runE2E() {
       }
     };
 
-    const res = await handler({
+    const res = await handler(signed({
       rawPath: '/slack/interactions',
       body: `payload=${encodeURIComponent(JSON.stringify(modalSubmissionPayload))}`
-    }, {});
+    }), {});
 
     const updatedDraft = dbStore.get(`DRAFT#${channelId}`);
     const updateCallMade = outboundCalls.some(call => call.url.includes('chat.update'));
@@ -292,10 +301,10 @@ async function runE2E() {
       response_url: 'https://hooks.slack.com/actions/test/cancel'
     };
 
-    const res = await handler({
+    const res = await handler(signed({
       rawPath: '/slack/interactions',
       body: `payload=${encodeURIComponent(JSON.stringify(cancelPayload))}`
-    }, {});
+    }), {});
 
     const draftAfterCancel = dbStore.get(`DRAFT#${channelId}`);
     const pass = res.statusCode === 200 && draftAfterCancel === undefined;
@@ -331,10 +340,10 @@ async function runE2E() {
   // FLOW 6: RBAC Guard Blocks /travel-admin in Employee Channel (#travel-booking)
   // --------------------------------------------------------------------------
   try {
-    const res = await handler({
+    const res = await handler(signed({
       rawPath: '/slack/commands',
       body: 'command=%2Ftravel-admin&trigger_id=TRIG123&channel_id=C0CH1CC22FL&user_id=U999'
-    }, {});
+    }), {});
     const body = JSON.parse(res.body || '{}');
     const pass = res.statusCode === 200 &&
       body.response_type === 'ephemeral' &&
@@ -410,6 +419,52 @@ async function runE2E() {
     recordE2E('E2E-FLOW-08', 'Admin AI Travel BI Agent Report in #biz-admin-alerts', Boolean(biReportPost));
   } catch (e) {
     recordE2E('E2E-FLOW-08', 'Admin AI Travel BI Agent Report in #biz-admin-alerts', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 9: Unsigned / Forged Requests Are Rejected
+  // --------------------------------------------------------------------------
+  try {
+    const forged = {
+      rawPath: '/slack/commands',
+      body: 'command=%2Ftravel-admin&trigger_id=TRIG123&channel_id=C0CGLFPNW7R'
+    };
+    const unsigned = await handler(forged, {});
+    const shortSig = await handler({ ...forged, headers: { ...signed(forged).headers, 'x-slack-signature': 'v0=abc' } }, {});
+    const tampered = await handler({ ...signed(forged), body: forged.body + '&x=1' }, {});
+    const secret = process.env.SLACK_SIGNING_SECRET;
+    const validEvent = signed(forged);
+    delete process.env.SLACK_SIGNING_SECRET;
+    const noSecret = await handler(validEvent, {});
+    process.env.SLACK_SIGNING_SECRET = secret;
+
+    const codes = [unsigned, shortSig, tampered, noSecret].map(r => r.statusCode);
+    recordE2E('E2E-FLOW-09', 'Handler Rejects Unsigned/Forged Requests (401)', codes.every(c => c === 401), codes.join(','));
+  } catch (e) {
+    recordE2E('E2E-FLOW-09', 'Handler Rejects Unsigned/Forged Requests (401)', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 10: scanAll Follows LastEvaluatedKey Across Pages
+  // --------------------------------------------------------------------------
+  try {
+    const originalSend = common.docClient.send;
+    const startKeys = [];
+    common.docClient.send = async (cmd) => {
+      startKeys.push(cmd.ExclusiveStartKey);
+      // Trang giữa rỗng: FilterExpression có thể lọc hết nhưng vẫn còn trang sau
+      if (startKeys.length === 1) return { Items: [{ trip_id: 'A' }], LastEvaluatedKey: { trip_id: 'A' } };
+      if (startKeys.length === 2) return { Items: [], LastEvaluatedKey: { trip_id: 'B' } };
+      return { Items: [{ trip_id: 'C' }] };
+    };
+    const items = await common.scanAll({ TableName: 'TravelBookings' });
+    common.docClient.send = originalSend;
+
+    const pass = items.map(i => i.trip_id).join() === 'A,C' &&
+      startKeys.length === 3 && startKeys[2].trip_id === 'B';
+    recordE2E('E2E-FLOW-10', 'DynamoDB Scan Reads All Pages', pass);
+  } catch (e) {
+    recordE2E('E2E-FLOW-10', 'DynamoDB Scan Reads All Pages', false, e.message);
   }
 
   // --------------------------------------------------------------------------

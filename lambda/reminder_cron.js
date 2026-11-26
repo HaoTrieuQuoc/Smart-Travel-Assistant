@@ -5,7 +5,7 @@
 const { callOpenRouter } = require('./ai_ocr_service');
 const {
   docClient,
-  ScanCommand,
+  scanAll,
   UpdateCommand,
   makeRequest,
   getGoogleAccessToken,
@@ -49,7 +49,7 @@ exports.handler = async (event, context) => {
   console.log('Starting 24h Flight Reminder Cron Job...');
 
   // 1. Quét các booking APPROVED và PENDING reminder
-  const scanResult = await docClient.send(new ScanCommand({
+  const items = await scanAll({
     TableName: DYNAMODB_TABLE,
     FilterExpression: '#st = :approved AND (#rem = :pending OR attribute_not_exists(#rem))',
     ExpressionAttributeNames: {
@@ -60,9 +60,8 @@ exports.handler = async (event, context) => {
       ':approved': 'APPROVED',
       ':pending': 'PENDING'
     }
-  }));
+  });
 
-  const items = scanResult.Items || [];
   console.log(`Tìm thấy ${items.length} chuyến bay APPROVED đang chờ xử lý.`);
 
   const now = new Date();
