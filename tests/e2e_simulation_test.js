@@ -11,6 +11,8 @@ Module._resolveFilename = function(request, parent, isMain) {
   return origResolve.apply(this, arguments);
 };
 
+const lambdaInvocations = [];
+
 // In-Memory DynamoDB Mock Store
 const dbStore = new Map();
 
@@ -70,7 +72,7 @@ require.cache['@aws-sdk/client-lambda'] = {
   filename: '@aws-sdk/client-lambda',
   loaded: true,
   exports: {
-    LambdaClient: class LambdaClient { send() { return Promise.resolve({}); } },
+    LambdaClient: class LambdaClient { send(cmd) { lambdaInvocations.push(JSON.parse(cmd.Payload.toString())); return Promise.resolve({}); } },
     InvokeCommand: class InvokeCommand { constructor(p) { Object.assign(this, p); } }
   }
 };
@@ -80,6 +82,11 @@ const EventEmitter = require('events');
 
 // Mock all outbound HTTPS requests
 const outboundCalls = [];
+let sheetsFailure = false;
+process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+  client_email: 'e2e@test.local',
+  private_key: require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' })
+});
 const origHttpsRequest = https.request;
 https.request = function(options, callback) {
   let postBody = '';
@@ -90,7 +97,7 @@ https.request = function(options, callback) {
     outboundCalls.push({ url, body: postBody });
     if (callback) {
       const res = new EventEmitter();
-      res.statusCode = 200;
+      res.statusCode = (sheetsFailure && options.hostname === 'sheets.googleapis.com') ? 500 : 200;
       res.headers = { 'content-type': 'application/json' };
       process.nextTick(() => {
         if (callback) callback(res);
@@ -120,6 +127,7 @@ https.request = function(options, callback) {
           } else {
             res.emit('data', JSON.stringify({
               ok: true,
+              access_token: 'e2e_google_token',
               ts: '1700000000.000200',
               user: { name: 'quoc_hao', profile: { display_name: 'quoc_hao', email: 'hao@company.com' } }
             }));
@@ -296,6 +304,7 @@ async function runE2E() {
   try {
     const cancelPayload = {
       type: 'block_actions',
+      user: { id: 'U123456', username: 'quoc_hao' },
       channel: { id: channelId },
       actions: [{ action_id: 'cancel_ticket' }],
       response_url: 'https://hooks.slack.com/actions/test/cancel'
@@ -465,6 +474,149 @@ async function runE2E() {
     recordE2E('E2E-FLOW-10', 'DynamoDB Scan Reads All Pages', pass);
   } catch (e) {
     recordE2E('E2E-FLOW-10', 'DynamoDB Scan Reads All Pages', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 11-13: Trip ID collision, Sheets failure rollback, /travel-admin worker
+  // --------------------------------------------------------------------------
+  const manualBooking = {
+    passenger_name: 'Nguyen Van Test', passenger_email: 'test@company.com', airline: 'Vietnam Airlines',
+    flight_number: 'VN214', departure_iata: 'SGN', arrival_iata: 'HAN', departure_time: '2026-12-05 08:00', pnr: 'ABC123'
+  };
+  const tripKeys = () => [...dbStore.keys()].filter(k => k.startsWith('TRIP-'));
+  try {
+    const originalSend = common.docClient.send;
+    const attempted = [];
+    common.docClient.send = async (cmd) => {
+      if (cmd.constructor.name === 'PutCommand' && String(cmd.Item.trip_id).startsWith('TRIP-')) {
+        attempted.push(cmd);
+        if (attempted.length === 1) throw Object.assign(new Error('exists'), { name: 'ConditionalCheckFailedException' });
+      }
+      return originalSend(cmd);
+    };
+    const before = tripKeys().length;
+    await handler({ isAsyncWorker: true, manualBooking }, {});
+    common.docClient.send = originalSend;
+
+    const pass = attempted.length === 2 &&
+      attempted.every(c => c.ConditionExpression === 'attribute_not_exists(trip_id)') &&
+      /^TRIP-\d{6}-\d{6}$/.test(attempted[1].Item.trip_id) &&
+      tripKeys().length === before + 1;
+    recordE2E('E2E-FLOW-11', 'Trip ID Collision Is Retried, Never Overwritten', pass);
+  } catch (e) {
+    recordE2E('E2E-FLOW-11', 'Trip ID Collision Is Retried, Never Overwritten', false, e.message);
+  }
+
+  try {
+    const before = tripKeys().length;
+    const callsBefore = outboundCalls.length;
+    sheetsFailure = true;
+    await handler({ isAsyncWorker: true, manualBooking }, {});
+    sheetsFailure = false;
+    const failureNotice = outboundCalls.slice(callsBefore).some(c => c.body.includes('Không lưu được chuyến công tác'));
+    recordE2E('E2E-FLOW-12', 'Sheets Failure Rolls Back DynamoDB and Notifies Admin', tripKeys().length === before && failureNotice);
+  } catch (e) {
+    sheetsFailure = false;
+    recordE2E('E2E-FLOW-12', 'Sheets Failure Rolls Back DynamoDB and Notifies Admin', false, e.message);
+  }
+
+  try {
+    const field = (block, action, value) => ({ [block]: { [action]: { value } } });
+    const submission = {
+      type: 'view_submission', user: { id: 'U_ADMIN_1' },
+      view: { callback_id: 'travel_booking_modal', state: { values: {
+        ...field('name_block', 'name_input', 'Nguyen Van Test'),
+        ...field('flight_block', 'flight_input', 'VN214 - Vietnam Airlines'),
+        ...field('time_block', 'time_input', '2026-12-05 08:00')
+      } } }
+    };
+    const before = tripKeys().length;
+    lambdaInvocations.length = 0;
+    const res = await handler(signed({ rawPath: '/slack/interactions', body: `payload=${encodeURIComponent(JSON.stringify(submission))}` }), {});
+    const job = lambdaInvocations[0];
+    const queuedOnly = tripKeys().length === before;
+    await handler(job, {});
+    const pass = res.statusCode === 200 && job.isAsyncWorker && job.manualBooking.flight_number === 'VN214' &&
+      queuedOnly && tripKeys().length === before + 1;
+    recordE2E('E2E-FLOW-13', '/travel-admin Saves Through Async Worker', pass);
+  } catch (e) {
+    recordE2E('E2E-FLOW-13', '/travel-admin Saves Through Async Worker', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 14-15: Channel & draft ownership permissions
+  // --------------------------------------------------------------------------
+  try {
+    const empChannel = 'C0CH1CC22FL';
+    const draftKey = `DRAFT#${empChannel}`;
+    dbStore.set(draftKey, { trip_id: draftKey, thread_ts: '1700000100.000100', ticket_data: { ...manualBooking, slack_user_id: 'U_OWNER' } });
+    const click = (userId, actionId) => handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'block_actions', user: { id: userId }, channel: { id: empChannel },
+        actions: [{ action_id: actionId }], response_url: 'https://hooks.slack.com/actions/test/perm'
+      }))}`
+    }), {});
+
+    const before = tripKeys().length;
+    await click('U_OTHER', 'confirm_save_ticket');
+    await click('U_OTHER', 'cancel_ticket');
+    const callsBefore = outboundCalls.length;
+    await click('U_OTHER', 'open_edit_ticket_modal');
+    const noModal = !outboundCalls.slice(callsBefore).some(c => c.url.includes('views.open'));
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    await handleSlackEvent({ type: 'message', channel: empChannel, user: 'U_OTHER', text: 'hủy', ts: '1700000100.000200', thread_ts: '1700000100.000100' });
+    const blocked = dbStore.has(draftKey) && tripKeys().length === before && noModal;
+
+    await click('U_OWNER', 'cancel_ticket');
+    recordE2E('E2E-FLOW-14', 'Only Draft Owner or HR Can Act on a Draft', blocked && !dbStore.has(draftKey));
+  } catch (e) {
+    recordE2E('E2E-FLOW-14', 'Only Draft Owner or HR Can Act on a Draft', false, e.message);
+  }
+
+  try {
+    const res = await handler(signed({
+      rawPath: '/slack/commands',
+      body: 'command=%2Ftravel-admin&trigger_id=TRIG123&channel_id=C0OTHER0000&user_id=U999'
+    }), {});
+    const commandBlocked = String(JSON.parse(res.body || '{}').text || '').includes('không nằm trong thẩm quyền');
+
+    const tripId = tripKeys()[0];
+    const callsBefore = outboundCalls.length;
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    await handleSlackEvent({ type: 'message', channel: 'C0OTHER0000', user: 'U999', text: `Sửa giá vé ${tripId} thành 1`, ts: '1700000200.000100' });
+    const newCalls = outboundCalls.slice(callsBefore);
+    const editBlocked = newCalls.some(c => c.body.includes('không nằm trong thẩm quyền')) &&
+      !newCalls.some(c => c.url.includes('openrouter') || c.url.includes('/values/'));
+    recordE2E('E2E-FLOW-15', 'Unknown Channel Cannot Use Admin Features', commandBlocked && editBlocked);
+  } catch (e) {
+    recordE2E('E2E-FLOW-15', 'Unknown Channel Cannot Use Admin Features', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 16: Departure time is read in the departure airport time zone
+  // --------------------------------------------------------------------------
+  try {
+    const { parseDepartureTime } = require('../lambda/flight_time');
+    const iso = (v, a) => parseDepartureTime(v, a).toISOString();
+    const parsed = iso('2026-12-05 08:00', 'SGN') === '2026-12-05T01:00:00.000Z' &&
+      iso('2026-12-05 08:00', 'KUL') === '2026-12-05T00:00:00.000Z' &&
+      iso('2026-07-01 08:00', 'LHR') === '2026-07-01T07:00:00.000Z' &&
+      iso('2026-12-01 08:00', 'LHR') === '2026-12-01T08:00:00.000Z' &&
+      iso('2026-12-05T01:00:00Z', 'SGN') === '2026-12-05T01:00:00.000Z' &&
+      Number.isNaN(parseDepartureTime('Chưa rõ', 'SGN').getTime());
+
+    // Cron chạy 08:00 VN: chuyến 07:00 VN đã bay, chuyến 03:00 VN hôm sau nằm trong 24 giờ tới
+    const { executeBIQuery } = require('../lambda/bi_analytics_service');
+    const stats = executeBIQuery([
+      { trip_id: 'TRIP-A', departure_iata: 'SGN', departure_time: '2026-12-05 07:00' },
+      { trip_id: 'TRIP-B', departure_iata: 'SGN', departure_time: '2026-12-06 03:00' }
+    ], { query_type: 'UPCOMING_FLIGHTS', filters: { upcoming_days: 1 } }, new Date('2026-12-05T01:00:00Z'));
+    const windowOk = stats.matched_trips.map(t => t.trip_id).join() === 'TRIP-B';
+
+    recordE2E('E2E-FLOW-16', 'Departure Times Use Airport Time Zone', parsed && windowOk);
+  } catch (e) {
+    recordE2E('E2E-FLOW-16', 'Departure Times Use Airport Time Zone', false, e.message);
   }
 
   // --------------------------------------------------------------------------

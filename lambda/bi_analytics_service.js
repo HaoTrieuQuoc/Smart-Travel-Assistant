@@ -4,6 +4,8 @@
  * and executes zero-hallucination aggregations over DynamoDB TravelBookings data.
  */
 
+const { parseDepartureTime } = require('./flight_time');
+
 const ROLES = {
   ADMIN_HR: 'ADMIN_HR',
   EMPLOYEE: 'EMPLOYEE',
@@ -143,7 +145,7 @@ function executeBIQuery(rawItems, plan = {}, nowDate = new Date()) {
       const days = Number(filters.upcoming_days) || 14;
       const depStr = String(trip.departure_time || '').trim();
       if (!depStr) return false;
-      const depDate = new Date(depStr.replace(' ', 'T'));
+      const depDate = parseDepartureTime(depStr, trip.departure_iata);
       if (isNaN(depDate.getTime())) return false;
       const diffMs = depDate.getTime() - nowDate.getTime();
       const diffDays = diffMs / (1000 * 60 * 60 * 24);

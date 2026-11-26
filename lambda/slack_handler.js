@@ -67,6 +67,14 @@ function verifySlackSignature(event) {
   return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
+// Kênh quản trị được thao tác mọi bản nháp; kênh khác chỉ người tải vé lên
+function canActOnDraft(channelId, userId, ticket) {
+  if (getChannelRole(channelId) === ROLES.ADMIN_HR) return true;
+  return !ticket?.slack_user_id || ticket.slack_user_id === userId;
+}
+
+const NOT_DRAFT_OWNER_MESSAGE = 'Chỉ người đã tải vé lên hoặc bộ phận HR mới được thao tác trên bản nháp này.';
+
 // Dictionary chuẩn hóa thành phố & mã IATA sân bay
 const CITY_MAP = {
   // Việt Nam
@@ -151,14 +159,63 @@ function normalizeTicketData(ticket) {
   return t;
 }
 
+const MAX_TRIP_ID_ATTEMPTS = 5;
+
+async function reserveTripRecord(normalized) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+
+  for (let attempt = 1; ; attempt++) {
+    const seq = crypto.randomInt(100000, 1000000);
+    const tripId = `TRIP-${year}${month}-${seq}`;
+    const prNumber = `PR-${year}-${month}${seq}`;
+    const rowHash = crypto.createHash('sha256').update(`${tripId}|${normalized.passenger_name}|${normalized.flight_number}|${normalized.departure_time}`).digest('hex');
+    try {
+      await docClient.send(new PutCommand({
+        TableName: DYNAMODB_TABLE,
+        ConditionExpression: 'attribute_not_exists(trip_id)',
+        Item: {
+          trip_id: tripId,
+          pr_number: prNumber,
+          status: 'APPROVED',
+          passenger_name: normalized.passenger_name,
+          department: normalized.department,
+          passenger_email: normalized.passenger_email,
+          slack_handle: normalized.slack_username,
+          slack_user_id: normalized.slack_user_id || '',
+          airline: normalized.airline,
+          flight_number: normalized.flight_number,
+          departure_city: normalized.departure_city,
+          departure_iata: normalized.departure_iata,
+          arrival_city: normalized.arrival_city,
+          arrival_iata: normalized.arrival_iata,
+          departure_time: normalized.departure_time,
+          arrival_time: normalized.arrival_time,
+          pnr: normalized.pnr,
+          ticket_class: normalized.ticket_class,
+          ticket_price: normalized.ticket_price,
+          payment_method: normalized.payment_method,
+          purpose: normalized.purpose,
+          reminder_sent: 'PENDING',
+          audit_status: 'VALID',
+          row_hash: rowHash,
+          last_synced_at: new Date().toISOString()
+        }
+      }));
+      return { tripId, prNumber };
+    } catch (err) {
+      if (err?.name !== 'ConditionalCheckFailedException' || attempt >= MAX_TRIP_ID_ATTEMPTS) throw err;
+    }
+  }
+}
+
 // Save Trip Record to Google Sheets and DynamoDB
 async function saveTripRecord(tripData) {
   const normalized = normalizeTicketData(tripData);
   const accessToken = await getGoogleAccessToken();
-  const now = new Date();
-  const tripSeq = Math.floor(100 + Math.random() * 900);
-  const tripId = `TRIP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${tripSeq}`;
-  const prNumber = `PR-${now.getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+  // 1. Giữ chỗ mã chuyến trong DynamoDB: mã trùng bị từ chối và sinh lại, không ghi đè chuyến cũ
+  const { tripId, prNumber } = await reserveTripRecord(normalized);
 
   const newRow = [
     tripId,                                                      // A: Trip_ID
@@ -186,47 +243,22 @@ async function saveTripRecord(tripData) {
     "Được bóc tách tự động qua AWS Lambda & AI Vision OCR."      // W: Notes
   ];
 
-  // 1. Ghi Google Sheet
-  await makeRequest(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A:W:append?valueInputOption=USER_ENTERED`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
+  // 2. Ghi Google Sheet; thất bại thì hoàn tác bản ghi DynamoDB để hai kho không lệch nhau
+  try {
+    const sheetRes = await makeRequest(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A:W:append?valueInputOption=USER_ENTERED`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    }, { values: [newRow] });
+    if (sheetRes?.status >= 300) {
+      throw new Error(`Google Sheets trả về lỗi ${sheetRes.status}`);
     }
-  }, { values: [newRow] });
-
-  // 2. Ghi AWS DynamoDB
-  const rowHash = crypto.createHash('sha256').update(`${tripId}|${normalized.passenger_name}|${normalized.flight_number}|${normalized.departure_time}`).digest('hex');
-  await docClient.send(new PutCommand({
-    TableName: DYNAMODB_TABLE,
-    Item: {
-      trip_id: tripId,
-      pr_number: prNumber,
-      status: 'APPROVED',
-      passenger_name: normalized.passenger_name,
-      department: normalized.department,
-      passenger_email: normalized.passenger_email,
-      slack_handle: normalized.slack_username,
-      slack_user_id: normalized.slack_user_id || '',
-      airline: normalized.airline,
-      flight_number: normalized.flight_number,
-      departure_city: normalized.departure_city,
-      departure_iata: normalized.departure_iata,
-      arrival_city: normalized.arrival_city,
-      arrival_iata: normalized.arrival_iata,
-      departure_time: normalized.departure_time,
-      arrival_time: normalized.arrival_time,
-      pnr: normalized.pnr,
-      ticket_class: normalized.ticket_class,
-      ticket_price: normalized.ticket_price,
-      payment_method: normalized.payment_method,
-      purpose: normalized.purpose,
-      reminder_sent: 'PENDING',
-      audit_status: 'VALID',
-      row_hash: rowHash,
-      last_synced_at: new Date().toISOString()
-    }
-  }));
+  } catch (err) {
+    await docClient.send(new DeleteCommand({ TableName: DYNAMODB_TABLE, Key: { trip_id: tripId } }));
+    throw err;
+  }
 
   return { tripId, prNumber, normalized };
 }
@@ -455,6 +487,36 @@ function buildTicketPreviewCard(channelId, threadTs, rawTicketInfo, isUpdated = 
   };
 }
 
+// Lưu chuyến đặt thủ công và báo kết quả. Không ném lỗi để Lambda không tự chạy lại và tạo chuyến trùng
+async function processManualBooking(tripData) {
+  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C0CGLFPNW7R';
+  try {
+    const { tripId } = await saveTripRecord(tripData);
+    await postSlackMessage(adminChannel, {
+      blocks: [
+        {
+          type: "header",
+          text: { type: "plain_text", text: "ĐÃ TẠO CHUYẾN CÔNG TÁC MỚI", emoji: false }
+        },
+        {
+          type: "section",
+          fields: [
+            { type: "mrkdwn", text: `*Hành khách:*\n${tripData.passenger_name}` },
+            { type: "mrkdwn", text: `*Chuyến bay:*\n${tripData.flight_number} (${tripData.airline})` },
+            { type: "mrkdwn", text: `*Lộ trình:*\n${tripData.departure_city} (${tripData.departure_iata}) ➔ ${tripData.arrival_city} (${tripData.arrival_iata})` },
+            { type: "mrkdwn", text: `*Giờ cất cánh:*\n${tripData.departure_time}` },
+            { type: "mrkdwn", text: `*Trip ID:*\n\`${tripId}\`` },
+            { type: "mrkdwn", text: `*PNR:*\n\`${tripData.pnr}\`` }
+          ]
+        }
+      ]
+    });
+  } catch (err) {
+    console.error('Manual booking error:', err);
+    await postSlackMessage(adminChannel, `Không lưu được chuyến công tác của ${tripData.passenger_name}: ${err.message}. Vui lòng kiểm tra Google Sheets trước khi tạo lại.`);
+  }
+}
+
 // Handle Slack Events (Message or App Mention)
 async function handleSlackEvent(event) {
   if (event.bot_id || event.subtype === 'bot_message') return;
@@ -497,7 +559,7 @@ async function handleSlackEvent(event) {
 
   // Slack API không gửi kèm `files` trong payload `app_mention`.
   // Chỉ tra cứu file vừa tải lên trong vòng <= 15 giây khi là app_mention và không phải câu hỏi BI / sửa TRIP đã lưu.
-  const isTextOnlyAdminQuery = isLikelyBIQuery(userText) || /TRIP-\d{6}-\d{3}/i.test(userText);
+  const isTextOnlyAdminQuery = isLikelyBIQuery(userText) || /TRIP-\d{6}-\d{3,6}/i.test(userText);
   if (rawFiles.length === 0 && channelId && event.type === 'app_mention' && !isTextOnlyAdminQuery) {
     try {
       const recent = await getRecentChannelFiles(channelId, event.user, event.ts, 15);
@@ -601,11 +663,11 @@ async function handleSlackEvent(event) {
   // TRƯỜNG HỢP 2: Người dùng nhắn tin chỉnh sửa chuyến đi ĐÃ LƯU (Google Sheets & DynamoDB)
   // Nhận diện qua mã TRIP-YYYYMM-XXX hoặc từ khóa chỉnh sửa
   // -------------------------------------------------------------
-  const tripIdMatch = userText.match(/TRIP-\d{6}-\d{3}/i);
+  const tripIdMatch = userText.match(/TRIP-\d{6}-\d{3,6}/i);
   const isEditAction = /(sửa|đổi|chỉnh|cập nhật|update|thay đổi)/i.test(userText);
 
   if (tripIdMatch && isEditAction) {
-    if (isEmployeeChannel) {
+    if (channelRole !== ROLES.ADMIN_HR) {
       await postSlackMessage(channelId, {
         channel: channelId,
         thread_ts: threadTs,
@@ -714,6 +776,11 @@ async function handleSlackEvent(event) {
   const isAdminBIQuery = channelRole === ROLES.ADMIN_HR && isLikelyBIQuery(userText);
 
   if (currentDraft && userText.length > 0 && isSameDraftThread && !isAdminBIQuery) {
+    if (!canActOnDraft(channelId, event.user, currentDraft.ticket_data)) {
+      await postSlackMessage(channelId, { channel: channelId, thread_ts: threadTs, text: NOT_DRAFT_OWNER_MESSAGE });
+      return;
+    }
+
     // Nếu người dùng muốn hủy bản nháp
     if (/(hủy|huỷ|cancel|thôi|bỏ)/i.test(userText)) {
       await docClient.send(new DeleteCommand({
@@ -739,7 +806,9 @@ async function handleSlackEvent(event) {
       const rawCorrected = await applyConversationalCorrection(currentDraft.ticket_data, userText);
       const updatedTicketData = normalizeTicketData({
         ...currentDraft.ticket_data,
-        ...rawCorrected
+        ...rawCorrected,
+        slack_user_id: currentDraft.ticket_data.slack_user_id,
+        slack_username: currentDraft.ticket_data.slack_username
       });
 
       // Gửi lại thẻ thông tin cập nhật
@@ -916,6 +985,11 @@ async function handleSlackEvent(event) {
 
 // Main Lambda Handler for API Gateway
 exports.handler = async (event, context) => {
+  if (event.isAsyncWorker && event.manualBooking) {
+    await processManualBooking(event.manualBooking);
+    return { statusCode: 200, body: 'OK' };
+  }
+
   // A. Nếu đây là async worker (được tự kích hoạt bất đồng bộ để xử lý công việc nặng)
   if (event.isAsyncWorker && event.slackEvent) {
     console.log('Running as async worker for Slack event:', event.slackEvent.type);
@@ -982,8 +1056,8 @@ exports.handler = async (event, context) => {
     const triggerId = params.get('trigger_id');
     const cmdChannelId = params.get('channel_id');
 
-    // RBAC Guard: Chặn lệnh quản trị /travel-admin tại kênh Nhân viên
-    if (getChannelRole(cmdChannelId) === ROLES.EMPLOYEE) {
+    // RBAC Guard: Lệnh /travel-admin chỉ chạy tại kênh quản trị
+    if (getChannelRole(cmdChannelId) !== ROLES.ADMIN_HR) {
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -1094,6 +1168,22 @@ exports.handler = async (event, context) => {
           const depIata = (values.dep_iata_block?.dep_iata_input?.value || '').trim().toUpperCase();
           const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
 
+          let draftOwner = null;
+          if (channelId) {
+            const draftRes = await docClient.send(new GetCommand({
+              TableName: DYNAMODB_TABLE,
+              Key: { trip_id: `DRAFT#${channelId}` }
+            }));
+            draftOwner = draftRes.Item?.ticket_data || null;
+            if (!canActOnDraft(channelId, payload.user?.id, draftOwner)) {
+              return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ response_action: 'errors', errors: { name_block: NOT_DRAFT_OWNER_MESSAGE } })
+              };
+            }
+          }
+
           const priceRaw = (values.price_block?.price_input?.value || '').trim();
           const cleanPrice = priceRaw.replace(/[^0-9]/g, '');
           const finalPrice = cleanPrice && cleanPrice !== '0' ? cleanPrice : (priceRaw.length > 0 && priceRaw !== '0' ? priceRaw : 'Chưa rõ');
@@ -1111,8 +1201,8 @@ exports.handler = async (event, context) => {
           const updatedTicket = normalizeTicketData({
             passenger_name: values.name_block?.name_input?.value || 'N/A',
             passenger_email: values.email_block?.email_input?.value || submitEmail || 'user@company.com',
-            slack_username: submitUsername || '@user',
-            slack_user_id: payload.user?.id || '',
+            slack_username: draftOwner?.slack_username || submitUsername || '@user',
+            slack_user_id: draftOwner?.slack_user_id || payload.user?.id || '',
             airline: values.airline_block?.airline_input?.value || 'Vietnam Airlines',
             flight_number: values.flight_block?.flight_input?.value || 'N/A',
             departure_iata: depIata,
@@ -1236,27 +1326,16 @@ exports.handler = async (event, context) => {
             purpose: purpose
           };
 
-          saveTripRecord(tripData).then(({ tripId }) => {
-            postSlackMessage(process.env.SLACK_ADMIN_CHANNEL_ID || 'C0CGLFPNW7R', {
-              blocks: [
-                {
-                  type: "header",
-                  text: { type: "plain_text", text: "ĐÃ TẠO CHUYẾN CÔNG TÁC MỚI", emoji: false }
-                },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: `*Hành khách:*\n${passengerName}` },
-                    { type: "mrkdwn", text: `*Chuyến bay:*\n${flightNum} (${airline})` },
-                    { type: "mrkdwn", text: `*Lộ trình:*\n${tripData.departure_city} (${tripData.departure_iata}) ➔ ${tripData.arrival_city} (${tripData.arrival_iata})` },
-                    { type: "mrkdwn", text: `*Giờ cất cánh:*\n${depTime}` },
-                    { type: "mrkdwn", text: `*Trip ID:*\n\`${tripId}\`` },
-                    { type: "mrkdwn", text: `*PNR:*\n\`${pnr}\`` }
-                  ]
-                }
-              ]
-            }).catch(console.error);
-          }).catch(console.error);
+          // Slack chỉ chờ 3 giây: giao việc lưu cho async worker. Không để promise chạy dở vì Lambda sẽ đóng băng
+          try {
+            await invokeLambdaAsync(context.functionName || 'smart-travel-assistant-slack-handler', {
+              isAsyncWorker: true,
+              manualBooking: tripData
+            });
+          } catch (err) {
+            console.error('Async invoke error, saving manual booking directly:', err);
+            await processManualBooking(tripData);
+          }
 
           return {
             statusCode: 200,
@@ -1270,6 +1349,27 @@ exports.handler = async (event, context) => {
       if (payload.type === 'block_actions') {
         const action = payload.actions?.[0];
         const channelId = payload.channel?.id || payload.container?.channel_id;
+
+        // B0. Chặn người không có quyền thao tác trên bản nháp
+        if (['open_edit_ticket_modal', 'confirm_save_ticket', 'cancel_ticket'].includes(action?.action_id)) {
+          const draftRes = await docClient.send(new GetCommand({
+            TableName: DYNAMODB_TABLE,
+            Key: { trip_id: `DRAFT#${channelId}` }
+          }));
+          let ticket = draftRes.Item?.ticket_data;
+          if (!ticket && action.value) {
+            try { ticket = JSON.parse(action.value); } catch {}
+          }
+          if (!canActOnDraft(channelId, payload.user?.id, ticket)) {
+            if (payload.response_url) {
+              await makeRequest(payload.response_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              }, { response_type: 'ephemeral', replace_original: false, text: NOT_DRAFT_OWNER_MESSAGE });
+            }
+            return { statusCode: 200, body: '' };
+          }
+        }
 
         // B1. Người dùng bấm nút "Chỉnh sửa" -> Mở Modal Popup Form
         if (action?.action_id === 'open_edit_ticket_modal') {

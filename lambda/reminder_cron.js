@@ -3,6 +3,7 @@
  * Triggered periodically by AWS EventBridge Cron
  */
 const { callOpenRouter } = require('./ai_ocr_service');
+const { parseDepartureTime } = require('./flight_time');
 const {
   docClient,
   scanAll,
@@ -69,7 +70,7 @@ exports.handler = async (event, context) => {
   let remindersSent = 0;
 
   for (const booking of items) {
-    const depTime = new Date(booking.departure_time);
+    const depTime = parseDepartureTime(booking.departure_time, booking.departure_iata);
     const isWithin24h = depTime >= now && depTime <= next24h;
 
     // Nếu thời gian cất cánh trong vòng 24h
