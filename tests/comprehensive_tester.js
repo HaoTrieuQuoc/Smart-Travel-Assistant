@@ -50,7 +50,8 @@ require.cache['@aws-sdk/client-lambda'] = {
 const assert = require('assert');
 const crypto = require('crypto');
 const {
-  validateFlightTicketExtraction
+  validateFlightTicketExtraction,
+  extractTextFromPdfBuffer
 } = require('../lambda/ai_ocr_service');
 const {
   verifySlackSignature,
@@ -965,6 +966,22 @@ try {
     recordTest('TC-BI-06', 'AI Travel BI Engine', 'Sorts UPCOMING_FLIGHTS by airport UTC timestamp across timezones', 'PASS');
   } else {
     recordTest('TC-BI-06', 'AI Travel BI Engine', `Unexpected order: ${upcomingSorted.matched_trips.map(t => t.trip_id).join(',')}`, 'FAIL');
+  }
+
+  // TC-OCR-05: Pure-Node PDF text extraction (FlateDecode stream via zlib)
+  const zlib = require('zlib');
+  const pdfStreamContent = 'BT /F1 12 Tf 72 720 Td (VIETNAM AIRLINES VN214 SGN HAN NGUYEN VAN A PNR ABC123) Tj ET';
+  const compressed = zlib.deflateSync(Buffer.from(pdfStreamContent, 'latin1'));
+  const fakePdf = Buffer.concat([
+    Buffer.from('%PDF-1.4\n1 0 obj << /Length ' + compressed.length + ' /Filter /FlateDecode >>\nstream\n', 'latin1'),
+    compressed,
+    Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1')
+  ]);
+  const extractedPdfText = extractTextFromPdfBuffer(fakePdf);
+  if (extractedPdfText.includes('VIETNAM AIRLINES') && extractedPdfText.includes('VN214') && extractedPdfText.includes('ABC123')) {
+    recordTest('TC-OCR-05', 'PDF Ticket Extraction', 'Extracts e-ticket text from FlateDecode PDF streams via Node zlib', 'PASS');
+  } else {
+    recordTest('TC-OCR-05', 'PDF Ticket Extraction', `Unexpected PDF text: ${extractedPdfText}`, 'FAIL');
   }
 } catch (e) {
   recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);

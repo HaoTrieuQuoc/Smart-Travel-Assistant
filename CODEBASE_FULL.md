@@ -1004,6 +1004,7 @@ Mỗi khi hoàn thành một tác vụ lập trình hoặc bàn giao, phản h�
  * AI OCR & PR Service for AWS Lambda & Node.js
  */
 const https = require('https');
+const zlib = require('zlib');
 
 function callOpenRouter(payload) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -1152,6 +1153,111 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
       }
     ],
     reasoning: { effort: 'none' },
+    temperature: 0.1,
+    max_tokens: 1000
+  };
+
+  const raw = await callOpenRouter(payload);
+  const parsed = cleanJsonResponse(raw);
+  if (typeof parsed.is_flight_ticket === 'string') {
+    parsed.is_flight_ticket = parsed.is_flight_ticket.trim().toLowerCase() === 'true';
+  }
+  if (!parsed.ticket_price || parsed.ticket_price === '0' || parsed.ticket_price === 0 || String(parsed.ticket_price).toLowerCase() === 'null') {
+    parsed.ticket_price = 'Chưa rõ';
+  }
+  return parsed;
+}
+
+/**
+ * Trích xuất văn bản từ file PDF (hỗ trợ FlateDecode stream bằng zlib có sẵn của Node.js)
+ */
+function extractTextFromPdfBuffer(pdfBuffer) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) return '';
+  const raw = pdfBuffer.toString('latin1');
+  const textChunks = [];
+
+  const collectPdfOperators = (str) => {
+    const btBlocks = str.match(/\bBT\b[\s\S]*?\bET\b/g) || [str];
+    for (const block of btBlocks) {
+      const matches = block.match(/\((?:\\.|[^\\()])*\)/g);
+      if (!matches) continue;
+      for (const m of matches) {
+        const inner = m
+          .slice(1, -1)
+          .replace(/\\([()\\])/g, '$1')
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, ' ')
+          .replace(/\\t/g, ' ');
+        const cleaned = inner.replace(/[^\x20-\x7E\u00A0-\uFFFF\n]/g, ' ').trim();
+        if (cleaned) textChunks.push(cleaned);
+      }
+    }
+  };
+
+  let match;
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  while ((match = streamRegex.exec(raw)) !== null) {
+    const streamBuf = Buffer.from(match[1], 'latin1');
+    let decoded = '';
+    try {
+      decoded = zlib.inflateSync(streamBuf).toString('latin1');
+    } catch {
+      decoded = streamBuf.toString('latin1');
+    }
+    collectPdfOperators(decoded);
+  }
+
+  if (textChunks.length === 0) {
+    collectPdfOperators(raw);
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+async function extractTicketFromPdfBase64(base64Pdf) {
+  const pdfBuffer = Buffer.from(String(base64Pdf || ''), 'base64');
+  const extractedText = extractTextFromPdfBuffer(pdfBuffer);
+  if (!extractedText || extractedText.length < 30) {
+    return {
+      is_flight_ticket: false,
+      rejection_reason: 'File PDF không chứa lớp văn bản có thể đọc được (có thể là bản scan dạng ảnh). Vui lòng chụp ảnh vé (PNG/JPG) để hệ thống OCR xử lý.'
+    };
+  }
+
+  const prompt = `Bạn là chuyên gia kiểm duyệt và bóc tách dữ liệu vé máy bay (Air Ticket Classification & Extraction Expert).
+Dưới đây là nội dung văn bản trích xuất từ một file PDF:
+"""
+${extractedText.slice(0, 6000)}
+"""
+
+Bước 1: Kiểm tra xem nội dung có phải là vé máy bay, e-ticket, xác nhận đặt vé máy bay, hoặc boarding pass hay không.
+- Nếu KHÔNG phải vé máy bay (ví dụ: hóa đơn ăn uống, hợp đồng, vé xe/tàu, tài liệu khác), đặt "is_flight_ticket": false, ghi ngắn gọn lý do bằng tiếng Việt vào "rejection_reason" (không dùng emoji), và để trống "" các trường còn lại.
+- Nếu ĐÚNG là vé máy bay/e-ticket, đặt "is_flight_ticket": true, "rejection_reason": "", và trích xuất chính xác các trường sau:
+
+Trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
+{
+  "is_flight_ticket": true,
+  "rejection_reason": "",
+  "passenger_name": "Tên đầy đủ hành khách in hoa không dấu",
+  "airline": "Tên hãng bay (Vietnam Airlines, Vietjet Air, Bamboo, v.v.)",
+  "flight_number": "Mã chuyến bay (ví dụ: VN214, VJ123)",
+  "departure_city": "Tên thành phố đi",
+  "departure_iata": "Mã sân bay đi 3 ký tự (ví dụ: SGN, HAN, DAD)",
+  "arrival_city": "Tên thành phố đến",
+  "arrival_iata": "Mã sân bay đến 3 ký tự (ví dụ: HAN, NRT, HND)",
+  "departure_time": "YYYY-MM-DD HH:mm (nếu không có năm thì lấy năm 2026)",
+  "arrival_time": "YYYY-MM-DD HH:mm",
+  "pnr": "Mã đặt chỗ 6 ký tự",
+  "ticket_class": "Hạng vé (Economy/Business)",
+  "ticket_price": "Giá vé số nguyên nếu có hiển thị rõ (ví dụ: 1800000). Nếu không có giá vé thì để 'Chưa rõ', tuyệt đối không điền số 0"
+}`;
+
+  const payload = {
+    model: process.env.AI_MODEL || '@preset/free-model-stack',
+    messages: [
+      { role: 'system', content: 'Always return strict valid JSON only without markdown explanation.' },
+      { role: 'user', content: prompt }
+    ],
     temperature: 0.1,
     max_tokens: 1000
   };
@@ -1361,6 +1467,8 @@ Quy tắc bắt buộc:
 
 module.exports = {
   extractTicketFromBase64,
+  extractTicketFromPdfBase64,
+  extractTextFromPdfBuffer,
   validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
@@ -2335,6 +2443,7 @@ exports.handler = async (event, context) => {
 const crypto = require('crypto');
 const {
   extractTicketFromBase64,
+  extractTicketFromPdfBase64,
   validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
@@ -3138,7 +3247,14 @@ async function handleSlackEvent(event) {
   }
 
   const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.heic'];
+  const isPdfFile = (f) => {
+    if (f.mimetype && String(f.mimetype).toLowerCase() === 'application/pdf') return true;
+    if (f.filetype && String(f.filetype).toLowerCase() === 'pdf') return true;
+    if (f.name && String(f.name).toLowerCase().endsWith('.pdf')) return true;
+    return false;
+  };
   const isImageFile = (f) => {
+    if (isPdfFile(f)) return true;
     if (f.mimetype && f.mimetype.startsWith('image/')) return true;
     if (f.filetype && ['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(String(f.filetype).toLowerCase())) return true;
     if (f.name && imageExtensions.some(ext => String(f.name).toLowerCase().endsWith(ext))) return true;
@@ -3148,16 +3264,18 @@ async function handleSlackEvent(event) {
   const imageFiles = rawFiles.filter(isImageFile);
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 1: Có ảnh đính kèm -> Xác nhận đã nhận, phân tích từng ảnh & từ chối nếu không phải vé máy bay
+  // TRƯỜNG HỢP 1: Có ảnh/PDF đính kèm -> Xác nhận đã nhận, phân tích từng file & từ chối nếu không phải vé máy bay
   // -------------------------------------------------------------
   if (imageFiles.length > 0) {
     const MAX_IMAGES = 5;
     const filesToProcess = imageFiles.slice(0, MAX_IMAGES);
     const ackText = imageFiles.length === 1
-      ? "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin..."
-      : `Đã nhận được ${imageFiles.length} ảnh. Đang tiến hành kiểm tra và phân tích${imageFiles.length > MAX_IMAGES ? ` (${MAX_IMAGES} ảnh đầu tiên)` : ''}...`;
+      ? (isPdfFile(filesToProcess[0])
+        ? "Đã nhận được file PDF. Đang tiến hành kiểm tra và phân tích thông tin..."
+        : "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin...")
+      : `Đã nhận được ${imageFiles.length} tệp đính kèm. Đang tiến hành kiểm tra và phân tích${imageFiles.length > MAX_IMAGES ? ` (${MAX_IMAGES} tệp đầu tiên)` : ''}...`;
 
-    // Phản hồi tức thì xác nhận đã nhận ảnh và đang phân tích (không dùng icon AI)
+    // Phản hồi tức thì xác nhận đã nhận ảnh/PDF và đang phân tích (không dùng icon AI)
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
@@ -3166,7 +3284,7 @@ async function handleSlackEvent(event) {
 
     for (let idx = 0; idx < filesToProcess.length; idx++) {
       let file = filesToProcess[idx];
-      const fileLabel = filesToProcess.length > 1 ? ` (Ảnh ${idx + 1}/${filesToProcess.length}${file.name ? `: ${file.name}` : ''})` : '';
+      const fileLabel = filesToProcess.length > 1 ? ` (Tệp ${idx + 1}/${filesToProcess.length}${file.name ? `: ${file.name}` : ''})` : '';
 
       try {
         if (!file.url_private_download && !file.url_private && file.id) {
@@ -3176,11 +3294,13 @@ async function handleSlackEvent(event) {
 
         const downloadUrl = file.url_private_download || file.url_private;
         if (!downloadUrl) {
-          throw new Error('Không lấy được liên kết tải ảnh từ Slack');
+          throw new Error('Không lấy được liên kết tải tệp từ Slack');
         }
 
         const base64Data = await downloadSlackFile(downloadUrl);
-        const rawTicketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+        const rawTicketInfo = isPdfFile(file)
+          ? await extractTicketFromPdfBase64(base64Data)
+          : await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
 
         // Kiểm tra phân loại: chỉ tiếp tục nếu ảnh thực sự là vé máy bay / boarding pass
         const validation = validateFlightTicketExtraction(rawTicketInfo);
@@ -4555,6 +4675,14 @@ exports.handler = async (event, context) => {
               ? { type: "context", elements: [{ type: "mrkdwn", text: `_${label} bởi <@${payload.user?.id || 'HR'}>._` }] }
               : b);
             await updateSlackMessage(channelId, payload.message.ts, lockedBlocks).catch(() => {});
+          }
+
+          if (prRes.Item.requester_id) {
+            await postSlackMessage(prRes.Item.requester_id, {
+              text: `Kết quả Purchase Request \`${prId}\`: ${label} bởi <@${payload.user?.id || 'HR'}>.\n• Điểm đến: ${prRes.Item.destination || 'Chưa rõ'}\n• Ngày đi dự kiến: ${prRes.Item.departure_date || 'Chưa định ngày'}\n• Ngân sách dự trù: ${Number(prRes.Item.estimated_cost || 0).toLocaleString('vi-VN')} VND`
+            }).catch(dmErr => {
+              console.error(`Không thể gửi DM kết quả PR ${prId} cho ${prRes.Item.requester_id}:`, dmErr.message);
+            });
           }
 
           if (payload.response_url) {
@@ -7283,7 +7411,8 @@ require.cache['@aws-sdk/client-lambda'] = {
 const assert = require('assert');
 const crypto = require('crypto');
 const {
-  validateFlightTicketExtraction
+  validateFlightTicketExtraction,
+  extractTextFromPdfBuffer
 } = require('../lambda/ai_ocr_service');
 const {
   verifySlackSignature,
@@ -8199,6 +8328,22 @@ try {
   } else {
     recordTest('TC-BI-06', 'AI Travel BI Engine', `Unexpected order: ${upcomingSorted.matched_trips.map(t => t.trip_id).join(',')}`, 'FAIL');
   }
+
+  // TC-OCR-05: Pure-Node PDF text extraction (FlateDecode stream via zlib)
+  const zlib = require('zlib');
+  const pdfStreamContent = 'BT /F1 12 Tf 72 720 Td (VIETNAM AIRLINES VN214 SGN HAN NGUYEN VAN A PNR ABC123) Tj ET';
+  const compressed = zlib.deflateSync(Buffer.from(pdfStreamContent, 'latin1'));
+  const fakePdf = Buffer.concat([
+    Buffer.from('%PDF-1.4\n1 0 obj << /Length ' + compressed.length + ' /Filter /FlateDecode >>\nstream\n', 'latin1'),
+    compressed,
+    Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1')
+  ]);
+  const extractedPdfText = extractTextFromPdfBuffer(fakePdf);
+  if (extractedPdfText.includes('VIETNAM AIRLINES') && extractedPdfText.includes('VN214') && extractedPdfText.includes('ABC123')) {
+    recordTest('TC-OCR-05', 'PDF Ticket Extraction', 'Extracts e-ticket text from FlateDecode PDF streams via Node zlib', 'PASS');
+  } else {
+    recordTest('TC-OCR-05', 'PDF Ticket Extraction', `Unexpected PDF text: ${extractedPdfText}`, 'FAIL');
+  }
 } catch (e) {
   recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);
 }
@@ -8308,6 +8453,7 @@ const outboundCalls = [];
 let sheetsFailure = false;
 let mockVisionResponse = null;
 let mockSheetRows = [];
+let mockDownloadBuffer = Buffer.from('fake_image_bytes');
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: 'e2e@test.local',
   private_key: require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' })
@@ -8319,7 +8465,7 @@ https.get = function(options, callback) {
   res.headers = { 'content-type': 'image/png' };
   process.nextTick(() => {
     if (callback) callback(res);
-    res.emit('data', Buffer.from('fake_image_bytes'));
+    res.emit('data', mockDownloadBuffer);
     res.emit('end');
   });
   return new EventEmitter();
@@ -8340,7 +8486,7 @@ https.request = function(options, callback) {
         const hostname = typeof options === 'object' ? (options.hostname || '') : '';
         if (hostname.includes('openrouter.ai')) {
           let content;
-          if (postBody.includes('image_url') && mockVisionResponse) {
+          if ((postBody.includes('image_url') || postBody.includes('Air Ticket Classification')) && mockVisionResponse) {
             content = JSON.stringify(mockVisionResponse);
           } else {
             const isPlanner = postBody.includes('Travel BI Query Planner');
@@ -9313,6 +9459,57 @@ async function runE2E() {
   } catch (e) {
     mockSheetRows = [];
     recordE2E('E2E-FLOW-29', 'Blocks Unknown Channel OCR/PR & Invalid AI Trip Edit Formats', false, e.message);
+  }
+
+  try {
+    const zlib = require('zlib');
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    const dmSentToRequester = outboundCalls.some(c => c.url.includes('chat.postMessage') && c.body.includes('"channel":"U_REQ_1"') && c.body.includes('ĐÃ PHÊ DUYỆT'));
+
+    const pdfBody = 'BT /F1 12 Tf (E-TICKET VIETNAM AIRLINES VN218 SGN DAD TRAN THI PDF PNR PDF123 2026-12-29 14:00) Tj ET';
+    const compressedPdf = zlib.deflateSync(Buffer.from(pdfBody, 'latin1'));
+    mockDownloadBuffer = Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj << /Length ' + compressedPdf.length + ' >>\nstream\n', 'latin1'),
+      compressedPdf,
+      Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1')
+    ]);
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'TRAN THI PDF',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN218',
+      departure_iata: 'SGN',
+      arrival_iata: 'DAD',
+      departure_time: '2026-12-29 14:00',
+      arrival_time: '2026-12-29 15:20',
+      pnr: 'PDF123',
+      ticket_class: 'Economy',
+      ticket_price: '1650000'
+    };
+    const pdfTs = '1700000900.000100';
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0CH1CC22FL',
+      user: 'U_PDF_1',
+      ts: pdfTs,
+      files: [{
+        id: 'F_PDF_1',
+        name: 'eticket.pdf',
+        mimetype: 'application/pdf',
+        url_private_download: 'https://files.slack.com/files-pri/T1-PDF/eticket.pdf'
+      }]
+    });
+    mockVisionResponse = null;
+    mockDownloadBuffer = Buffer.from('fake_image_bytes');
+
+    const pdfDraft = dbStore.get(`DRAFT#C0CH1CC22FL#${pdfTs}`);
+    const pdfOk = pdfDraft && pdfDraft.ticket_data?.flight_number === 'VN218' && pdfDraft.ticket_data?.pnr === 'PDF123';
+    recordE2E('E2E-FLOW-30', 'Sends PR Result DM to Requester & Extracts PDF E-Ticket', dmSentToRequester && Boolean(pdfOk));
+  } catch (e) {
+    mockVisionResponse = null;
+    mockDownloadBuffer = Buffer.from('fake_image_bytes');
+    recordE2E('E2E-FLOW-30', 'Sends PR Result DM to Requester & Extracts PDF E-Ticket', false, e.message);
   }
 
   // --------------------------------------------------------------------------

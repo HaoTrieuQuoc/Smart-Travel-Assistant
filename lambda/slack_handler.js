@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const {
   extractTicketFromBase64,
+  extractTicketFromPdfBase64,
   validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
@@ -808,7 +809,14 @@ async function handleSlackEvent(event) {
   }
 
   const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.heic'];
+  const isPdfFile = (f) => {
+    if (f.mimetype && String(f.mimetype).toLowerCase() === 'application/pdf') return true;
+    if (f.filetype && String(f.filetype).toLowerCase() === 'pdf') return true;
+    if (f.name && String(f.name).toLowerCase().endsWith('.pdf')) return true;
+    return false;
+  };
   const isImageFile = (f) => {
+    if (isPdfFile(f)) return true;
     if (f.mimetype && f.mimetype.startsWith('image/')) return true;
     if (f.filetype && ['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(String(f.filetype).toLowerCase())) return true;
     if (f.name && imageExtensions.some(ext => String(f.name).toLowerCase().endsWith(ext))) return true;
@@ -818,16 +826,18 @@ async function handleSlackEvent(event) {
   const imageFiles = rawFiles.filter(isImageFile);
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 1: Có ảnh đính kèm -> Xác nhận đã nhận, phân tích từng ảnh & từ chối nếu không phải vé máy bay
+  // TRƯỜNG HỢP 1: Có ảnh/PDF đính kèm -> Xác nhận đã nhận, phân tích từng file & từ chối nếu không phải vé máy bay
   // -------------------------------------------------------------
   if (imageFiles.length > 0) {
     const MAX_IMAGES = 5;
     const filesToProcess = imageFiles.slice(0, MAX_IMAGES);
     const ackText = imageFiles.length === 1
-      ? "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin..."
-      : `Đã nhận được ${imageFiles.length} ảnh. Đang tiến hành kiểm tra và phân tích${imageFiles.length > MAX_IMAGES ? ` (${MAX_IMAGES} ảnh đầu tiên)` : ''}...`;
+      ? (isPdfFile(filesToProcess[0])
+        ? "Đã nhận được file PDF. Đang tiến hành kiểm tra và phân tích thông tin..."
+        : "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin...")
+      : `Đã nhận được ${imageFiles.length} tệp đính kèm. Đang tiến hành kiểm tra và phân tích${imageFiles.length > MAX_IMAGES ? ` (${MAX_IMAGES} tệp đầu tiên)` : ''}...`;
 
-    // Phản hồi tức thì xác nhận đã nhận ảnh và đang phân tích (không dùng icon AI)
+    // Phản hồi tức thì xác nhận đã nhận ảnh/PDF và đang phân tích (không dùng icon AI)
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
@@ -836,7 +846,7 @@ async function handleSlackEvent(event) {
 
     for (let idx = 0; idx < filesToProcess.length; idx++) {
       let file = filesToProcess[idx];
-      const fileLabel = filesToProcess.length > 1 ? ` (Ảnh ${idx + 1}/${filesToProcess.length}${file.name ? `: ${file.name}` : ''})` : '';
+      const fileLabel = filesToProcess.length > 1 ? ` (Tệp ${idx + 1}/${filesToProcess.length}${file.name ? `: ${file.name}` : ''})` : '';
 
       try {
         if (!file.url_private_download && !file.url_private && file.id) {
@@ -846,11 +856,13 @@ async function handleSlackEvent(event) {
 
         const downloadUrl = file.url_private_download || file.url_private;
         if (!downloadUrl) {
-          throw new Error('Không lấy được liên kết tải ảnh từ Slack');
+          throw new Error('Không lấy được liên kết tải tệp từ Slack');
         }
 
         const base64Data = await downloadSlackFile(downloadUrl);
-        const rawTicketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+        const rawTicketInfo = isPdfFile(file)
+          ? await extractTicketFromPdfBase64(base64Data)
+          : await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
 
         // Kiểm tra phân loại: chỉ tiếp tục nếu ảnh thực sự là vé máy bay / boarding pass
         const validation = validateFlightTicketExtraction(rawTicketInfo);
@@ -2225,6 +2237,14 @@ exports.handler = async (event, context) => {
               ? { type: "context", elements: [{ type: "mrkdwn", text: `_${label} bởi <@${payload.user?.id || 'HR'}>._` }] }
               : b);
             await updateSlackMessage(channelId, payload.message.ts, lockedBlocks).catch(() => {});
+          }
+
+          if (prRes.Item.requester_id) {
+            await postSlackMessage(prRes.Item.requester_id, {
+              text: `Kết quả Purchase Request \`${prId}\`: ${label} bởi <@${payload.user?.id || 'HR'}>.\n• Điểm đến: ${prRes.Item.destination || 'Chưa rõ'}\n• Ngày đi dự kiến: ${prRes.Item.departure_date || 'Chưa định ngày'}\n• Ngân sách dự trù: ${Number(prRes.Item.estimated_cost || 0).toLocaleString('vi-VN')} VND`
+            }).catch(dmErr => {
+              console.error(`Không thể gửi DM kết quả PR ${prId} cho ${prRes.Item.requester_id}:`, dmErr.message);
+            });
           }
 
           if (payload.response_url) {

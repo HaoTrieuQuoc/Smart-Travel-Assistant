@@ -85,6 +85,7 @@ const outboundCalls = [];
 let sheetsFailure = false;
 let mockVisionResponse = null;
 let mockSheetRows = [];
+let mockDownloadBuffer = Buffer.from('fake_image_bytes');
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: 'e2e@test.local',
   private_key: require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' })
@@ -96,7 +97,7 @@ https.get = function(options, callback) {
   res.headers = { 'content-type': 'image/png' };
   process.nextTick(() => {
     if (callback) callback(res);
-    res.emit('data', Buffer.from('fake_image_bytes'));
+    res.emit('data', mockDownloadBuffer);
     res.emit('end');
   });
   return new EventEmitter();
@@ -117,7 +118,7 @@ https.request = function(options, callback) {
         const hostname = typeof options === 'object' ? (options.hostname || '') : '';
         if (hostname.includes('openrouter.ai')) {
           let content;
-          if (postBody.includes('image_url') && mockVisionResponse) {
+          if ((postBody.includes('image_url') || postBody.includes('Air Ticket Classification')) && mockVisionResponse) {
             content = JSON.stringify(mockVisionResponse);
           } else {
             const isPlanner = postBody.includes('Travel BI Query Planner');
@@ -1090,6 +1091,57 @@ async function runE2E() {
   } catch (e) {
     mockSheetRows = [];
     recordE2E('E2E-FLOW-29', 'Blocks Unknown Channel OCR/PR & Invalid AI Trip Edit Formats', false, e.message);
+  }
+
+  try {
+    const zlib = require('zlib');
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    const dmSentToRequester = outboundCalls.some(c => c.url.includes('chat.postMessage') && c.body.includes('"channel":"U_REQ_1"') && c.body.includes('ĐÃ PHÊ DUYỆT'));
+
+    const pdfBody = 'BT /F1 12 Tf (E-TICKET VIETNAM AIRLINES VN218 SGN DAD TRAN THI PDF PNR PDF123 2026-12-29 14:00) Tj ET';
+    const compressedPdf = zlib.deflateSync(Buffer.from(pdfBody, 'latin1'));
+    mockDownloadBuffer = Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj << /Length ' + compressedPdf.length + ' >>\nstream\n', 'latin1'),
+      compressedPdf,
+      Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1')
+    ]);
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'TRAN THI PDF',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN218',
+      departure_iata: 'SGN',
+      arrival_iata: 'DAD',
+      departure_time: '2026-12-29 14:00',
+      arrival_time: '2026-12-29 15:20',
+      pnr: 'PDF123',
+      ticket_class: 'Economy',
+      ticket_price: '1650000'
+    };
+    const pdfTs = '1700000900.000100';
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0CH1CC22FL',
+      user: 'U_PDF_1',
+      ts: pdfTs,
+      files: [{
+        id: 'F_PDF_1',
+        name: 'eticket.pdf',
+        mimetype: 'application/pdf',
+        url_private_download: 'https://files.slack.com/files-pri/T1-PDF/eticket.pdf'
+      }]
+    });
+    mockVisionResponse = null;
+    mockDownloadBuffer = Buffer.from('fake_image_bytes');
+
+    const pdfDraft = dbStore.get(`DRAFT#C0CH1CC22FL#${pdfTs}`);
+    const pdfOk = pdfDraft && pdfDraft.ticket_data?.flight_number === 'VN218' && pdfDraft.ticket_data?.pnr === 'PDF123';
+    recordE2E('E2E-FLOW-30', 'Sends PR Result DM to Requester & Extracts PDF E-Ticket', dmSentToRequester && Boolean(pdfOk));
+  } catch (e) {
+    mockVisionResponse = null;
+    mockDownloadBuffer = Buffer.from('fake_image_bytes');
+    recordE2E('E2E-FLOW-30', 'Sends PR Result DM to Requester & Extracts PDF E-Ticket', false, e.message);
   }
 
   // --------------------------------------------------------------------------

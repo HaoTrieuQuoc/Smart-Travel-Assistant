@@ -2,6 +2,7 @@
  * AI OCR & PR Service for AWS Lambda & Node.js
  */
 const https = require('https');
+const zlib = require('zlib');
 
 function callOpenRouter(payload) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -150,6 +151,111 @@ Trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
       }
     ],
     reasoning: { effort: 'none' },
+    temperature: 0.1,
+    max_tokens: 1000
+  };
+
+  const raw = await callOpenRouter(payload);
+  const parsed = cleanJsonResponse(raw);
+  if (typeof parsed.is_flight_ticket === 'string') {
+    parsed.is_flight_ticket = parsed.is_flight_ticket.trim().toLowerCase() === 'true';
+  }
+  if (!parsed.ticket_price || parsed.ticket_price === '0' || parsed.ticket_price === 0 || String(parsed.ticket_price).toLowerCase() === 'null') {
+    parsed.ticket_price = 'Chưa rõ';
+  }
+  return parsed;
+}
+
+/**
+ * Trích xuất văn bản từ file PDF (hỗ trợ FlateDecode stream bằng zlib có sẵn của Node.js)
+ */
+function extractTextFromPdfBuffer(pdfBuffer) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) return '';
+  const raw = pdfBuffer.toString('latin1');
+  const textChunks = [];
+
+  const collectPdfOperators = (str) => {
+    const btBlocks = str.match(/\bBT\b[\s\S]*?\bET\b/g) || [str];
+    for (const block of btBlocks) {
+      const matches = block.match(/\((?:\\.|[^\\()])*\)/g);
+      if (!matches) continue;
+      for (const m of matches) {
+        const inner = m
+          .slice(1, -1)
+          .replace(/\\([()\\])/g, '$1')
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, ' ')
+          .replace(/\\t/g, ' ');
+        const cleaned = inner.replace(/[^\x20-\x7E\u00A0-\uFFFF\n]/g, ' ').trim();
+        if (cleaned) textChunks.push(cleaned);
+      }
+    }
+  };
+
+  let match;
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  while ((match = streamRegex.exec(raw)) !== null) {
+    const streamBuf = Buffer.from(match[1], 'latin1');
+    let decoded = '';
+    try {
+      decoded = zlib.inflateSync(streamBuf).toString('latin1');
+    } catch {
+      decoded = streamBuf.toString('latin1');
+    }
+    collectPdfOperators(decoded);
+  }
+
+  if (textChunks.length === 0) {
+    collectPdfOperators(raw);
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+async function extractTicketFromPdfBase64(base64Pdf) {
+  const pdfBuffer = Buffer.from(String(base64Pdf || ''), 'base64');
+  const extractedText = extractTextFromPdfBuffer(pdfBuffer);
+  if (!extractedText || extractedText.length < 30) {
+    return {
+      is_flight_ticket: false,
+      rejection_reason: 'File PDF không chứa lớp văn bản có thể đọc được (có thể là bản scan dạng ảnh). Vui lòng chụp ảnh vé (PNG/JPG) để hệ thống OCR xử lý.'
+    };
+  }
+
+  const prompt = `Bạn là chuyên gia kiểm duyệt và bóc tách dữ liệu vé máy bay (Air Ticket Classification & Extraction Expert).
+Dưới đây là nội dung văn bản trích xuất từ một file PDF:
+"""
+${extractedText.slice(0, 6000)}
+"""
+
+Bước 1: Kiểm tra xem nội dung có phải là vé máy bay, e-ticket, xác nhận đặt vé máy bay, hoặc boarding pass hay không.
+- Nếu KHÔNG phải vé máy bay (ví dụ: hóa đơn ăn uống, hợp đồng, vé xe/tàu, tài liệu khác), đặt "is_flight_ticket": false, ghi ngắn gọn lý do bằng tiếng Việt vào "rejection_reason" (không dùng emoji), và để trống "" các trường còn lại.
+- Nếu ĐÚNG là vé máy bay/e-ticket, đặt "is_flight_ticket": true, "rejection_reason": "", và trích xuất chính xác các trường sau:
+
+Trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
+{
+  "is_flight_ticket": true,
+  "rejection_reason": "",
+  "passenger_name": "Tên đầy đủ hành khách in hoa không dấu",
+  "airline": "Tên hãng bay (Vietnam Airlines, Vietjet Air, Bamboo, v.v.)",
+  "flight_number": "Mã chuyến bay (ví dụ: VN214, VJ123)",
+  "departure_city": "Tên thành phố đi",
+  "departure_iata": "Mã sân bay đi 3 ký tự (ví dụ: SGN, HAN, DAD)",
+  "arrival_city": "Tên thành phố đến",
+  "arrival_iata": "Mã sân bay đến 3 ký tự (ví dụ: HAN, NRT, HND)",
+  "departure_time": "YYYY-MM-DD HH:mm (nếu không có năm thì lấy năm 2026)",
+  "arrival_time": "YYYY-MM-DD HH:mm",
+  "pnr": "Mã đặt chỗ 6 ký tự",
+  "ticket_class": "Hạng vé (Economy/Business)",
+  "ticket_price": "Giá vé số nguyên nếu có hiển thị rõ (ví dụ: 1800000). Nếu không có giá vé thì để 'Chưa rõ', tuyệt đối không điền số 0"
+}`;
+
+  const payload = {
+    model: process.env.AI_MODEL || '@preset/free-model-stack',
+    messages: [
+      { role: 'system', content: 'Always return strict valid JSON only without markdown explanation.' },
+      { role: 'user', content: prompt }
+    ],
     temperature: 0.1,
     max_tokens: 1000
   };
@@ -359,6 +465,8 @@ Quy tắc bắt buộc:
 
 module.exports = {
   extractTicketFromBase64,
+  extractTicketFromPdfBase64,
+  extractTextFromPdfBuffer,
   validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
