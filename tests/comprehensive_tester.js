@@ -50,6 +50,9 @@ require.cache['@aws-sdk/client-lambda'] = {
 const assert = require('assert');
 const crypto = require('crypto');
 const {
+  validateFlightTicketExtraction
+} = require('../lambda/ai_ocr_service');
+const {
   verifySlackSignature,
   CITY_MAP,
   toTitleCase,
@@ -834,6 +837,81 @@ try {
   }
 } catch (e) {
   recordTest('TC-RBAC-01', 'Channel RBAC / BI', 'RBAC & BI test exception', 'FAIL', e.message);
+}
+
+// ============================================================================
+// 8B. FEATURE 9: FLIGHT TICKET IMAGE CLASSIFICATION & REJECTION GUARD
+// ============================================================================
+console.log('\n--- 8B. Testing Feature: Flight Ticket Image Classification ---');
+
+try {
+  // TC-OCR-01: Rejects explicit non-flight-ticket image with custom reason or fallback
+  const nonTicketCustom = validateFlightTicketExtraction({
+    is_flight_ticket: false,
+    rejection_reason: 'Ảnh là hóa đơn ăn uống, không phải vé máy bay.',
+    airline: '',
+    flight_number: ''
+  });
+  const nonTicketFallback = validateFlightTicketExtraction({ is_flight_ticket: 'false', rejection_reason: '' });
+  if (!nonTicketCustom.valid && nonTicketCustom.reason.includes('hóa đơn ăn uống') && !nonTicketFallback.valid && nonTicketFallback.reason.includes('không phải là vé máy bay')) {
+    recordTest('TC-OCR-01', 'Image Classification', 'Rejects non-flight-ticket images with clear Vietnamese reason', 'PASS');
+  } else {
+    recordTest('TC-OCR-01', 'Image Classification', `Unexpected result: ${JSON.stringify({ nonTicketCustom, nonTicketFallback })}`, 'FAIL');
+  }
+
+  // TC-OCR-02: Anti-hallucination guard rejects empty/N/A fields even if is_flight_ticket is true
+  const emptyFields = validateFlightTicketExtraction({
+    is_flight_ticket: true,
+    passenger_name: 'N/A',
+    airline: 'Chưa rõ',
+    flight_number: '',
+    departure_iata: 'null',
+    arrival_iata: '',
+    pnr: '---'
+  });
+  const nameOnly = validateFlightTicketExtraction({
+    is_flight_ticket: true,
+    passenger_name: 'NGUYEN VAN A',
+    departure_time: '2026-12-01 09:00'
+  });
+  if (!emptyFields.valid && !nameOnly.valid) {
+    recordTest('TC-OCR-02', 'Image Classification', 'Blocks empty/N/A or non-aviation payloads even if flag is true', 'PASS');
+  } else {
+    recordTest('TC-OCR-02', 'Image Classification', 'Failed to block insufficient flight ticket fields', 'FAIL');
+  }
+
+  // TC-OCR-03: Accepts valid flight ticket / boarding pass (including partial ticket without price)
+  const validTicket = validateFlightTicketExtraction({
+    is_flight_ticket: true,
+    passenger_name: 'TRAN THI B',
+    airline: 'Vietnam Airlines',
+    flight_number: 'VN214',
+    departure_iata: 'SGN',
+    arrival_iata: 'HAN',
+    ticket_price: 'Chưa rõ'
+  });
+  if (validTicket.valid) {
+    recordTest('TC-OCR-03', 'Image Classification', 'Accepts valid flight ticket / boarding pass extraction', 'PASS');
+  } else {
+    recordTest('TC-OCR-03', 'Image Classification', `Valid ticket rejected: ${validTicket.reason}`, 'FAIL');
+  }
+
+  // TC-OCR-04: normalizeTicketData strips internal classification metadata
+  const cleaned = normalizeTicketData({
+    is_flight_ticket: true,
+    rejection_reason: '',
+    passenger_name: 'LE VAN C',
+    flight_number: 'VJ128',
+    departure_iata: 'SGN',
+    arrival_iata: 'DAD'
+  });
+  if (!('is_flight_ticket' in cleaned) && !('rejection_reason' in cleaned) && cleaned.flight_number === 'VJ128') {
+    recordTest('TC-OCR-04', 'Image Classification', 'normalizeTicketData strips internal classification fields', 'PASS');
+  } else {
+    recordTest('TC-OCR-04', 'Image Classification', 'Internal classification fields leaked into normalized ticket', 'FAIL');
+  }
+} catch (e) {
+  recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);
 }
 
 // ============================================================================

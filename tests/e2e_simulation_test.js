@@ -83,11 +83,23 @@ const EventEmitter = require('events');
 // Mock all outbound HTTPS requests
 const outboundCalls = [];
 let sheetsFailure = false;
+let mockVisionResponse = null;
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: 'e2e@test.local',
   private_key: require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' })
 });
 const origHttpsRequest = https.request;
+https.get = function(options, callback) {
+  const res = new EventEmitter();
+  res.statusCode = 200;
+  res.headers = { 'content-type': 'image/png' };
+  process.nextTick(() => {
+    if (callback) callback(res);
+    res.emit('data', Buffer.from('fake_image_bytes'));
+    res.emit('end');
+  });
+  return new EventEmitter();
+};
 https.request = function(options, callback) {
   let postBody = '';
   const req = new EventEmitter();
@@ -103,16 +115,21 @@ https.request = function(options, callback) {
         if (callback) callback(res);
         const hostname = typeof options === 'object' ? (options.hostname || '') : '';
         if (hostname.includes('openrouter.ai')) {
-          const isPlanner = postBody.includes('Travel BI Query Planner');
-          const content = isPlanner
-            ? JSON.stringify({
-                is_bi_query: true,
-                query_type: 'GROUP_BY_DEPARTMENT',
-                group_by: 'department',
-                filters: {},
-                limit: 10
-              })
-            : '• Tổng chi phí ghi nhận là 3.500.000 VND trên 1 chuyến bay.\n• Không phát hiện vé thiếu giá.';
+          let content;
+          if (postBody.includes('image_url') && mockVisionResponse) {
+            content = JSON.stringify(mockVisionResponse);
+          } else {
+            const isPlanner = postBody.includes('Travel BI Query Planner');
+            content = isPlanner
+              ? JSON.stringify({
+                  is_bi_query: true,
+                  query_type: 'GROUP_BY_DEPARTMENT',
+                  group_by: 'department',
+                  filters: {},
+                  limit: 10
+                })
+              : '• Tổng chi phí ghi nhận là 3.500.000 VND trên 1 chuyến bay.\n• Không phát hiện vé thiếu giá.';
+          }
           res.emit('data', JSON.stringify({
             choices: [{ message: { content } }]
           }));
@@ -617,6 +634,99 @@ async function runE2E() {
     recordE2E('E2E-FLOW-16', 'Departure Times Use Airport Time Zone', parsed && windowOk);
   } catch (e) {
     recordE2E('E2E-FLOW-16', 'Departure Times Use Airport Time Zone', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 17-18: Image Acknowledgement, Non-Ticket Rejection & Valid Ticket Draft
+  // --------------------------------------------------------------------------
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'mock_openrouter_key';
+    const imgChannel = 'C0CH1CC22FL';
+    const draftKey = `DRAFT#${imgChannel}`;
+    dbStore.delete(draftKey);
+    const callsBefore = outboundCalls.length;
+
+    mockVisionResponse = {
+      is_flight_ticket: false,
+      rejection_reason: 'Ảnh là hóa đơn cà phê, không phải vé máy bay.',
+      passenger_name: '',
+      airline: '',
+      flight_number: ''
+    };
+
+    await handleSlackEvent({
+      type: 'message',
+      channel: imgChannel,
+      user: 'U_EMP_1',
+      ts: '1700000300.000100',
+      files: [{
+        id: 'F_NON_TICKET',
+        name: 'coffee_receipt.jpg',
+        mimetype: 'image/jpeg',
+        url_private_download: 'https://files.slack.com/files-pri/T1-F1/coffee_receipt.jpg'
+      }]
+    });
+    mockVisionResponse = null;
+
+    const newCalls = outboundCalls.slice(callsBefore).filter(c => c.url.includes('chat.postMessage'));
+    const ackSent = newCalls.some(c => c.body.includes('Đã nhận được ảnh') && c.body.includes('phân tích'));
+    const rejectedSent = newCalls.some(c => c.body.includes('Từ chối xử lý ảnh') && c.body.includes('hóa đơn cà phê'));
+    const noDraftCreated = !dbStore.has(draftKey) && !newCalls.some(c => c.body.includes('"blocks"'));
+
+    recordE2E('E2E-FLOW-17', 'Non-Flight Image Acknowledged Then Rejected Without Draft', ackSent && rejectedSent && noDraftCreated);
+  } catch (e) {
+    mockVisionResponse = null;
+    recordE2E('E2E-FLOW-17', 'Non-Flight Image Acknowledged Then Rejected Without Draft', false, e.message);
+  }
+
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'mock_openrouter_key';
+    const imgChannel = 'C0CH1CC22FL';
+    const draftKey = `DRAFT#${imgChannel}`;
+    dbStore.delete(draftKey);
+    const callsBefore = outboundCalls.length;
+
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'NGUYEN VAN B',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN214',
+      departure_iata: 'SGN',
+      arrival_iata: 'HAN',
+      departure_time: '2026-12-10 08:30',
+      arrival_time: '2026-12-10 10:40',
+      pnr: 'ABC123',
+      ticket_class: 'Economy',
+      ticket_price: '2100000'
+    };
+
+    await handleSlackEvent({
+      type: 'message',
+      channel: imgChannel,
+      user: 'U_EMP_1',
+      ts: '1700000301.000100',
+      files: [{
+        id: 'F_VALID_TICKET',
+        name: 'boarding_pass.png',
+        mimetype: 'image/png',
+        url_private_download: 'https://files.slack.com/files-pri/T1-F2/boarding_pass.png'
+      }]
+    });
+    mockVisionResponse = null;
+
+    const newCalls = outboundCalls.slice(callsBefore).filter(c => c.url.includes('chat.postMessage'));
+    const ackSent = newCalls.some(c => c.body.includes('Đã nhận được ảnh'));
+    const cardSent = newCalls.some(c => c.body.includes('"blocks"'));
+    const draft = dbStore.get(draftKey);
+    const draftOk = draft && draft.ticket_data?.flight_number === 'VN214' && !('is_flight_ticket' in draft.ticket_data);
+
+    recordE2E('E2E-FLOW-18', 'Valid Flight Ticket Image Creates Draft & Preview Card', ackSent && cardSent && draftOk);
+  } catch (e) {
+    mockVisionResponse = null;
+    recordE2E('E2E-FLOW-18', 'Valid Flight Ticket Image Creates Draft & Preview Card', false, e.message);
   }
 
   // --------------------------------------------------------------------------

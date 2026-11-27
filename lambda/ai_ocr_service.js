@@ -66,10 +66,61 @@ function cleanJsonResponse(rawText) {
   return JSON.parse(cleaned);
 }
 
+function isMeaningfulField(val) {
+  if (val === null || val === undefined) return false;
+  const s = String(val).trim().toLowerCase();
+  return s !== '' && !['n/a', 'na', 'none', 'null', 'undefined', 'chưa rõ', 'unknown', 'không rõ', '-', '--', '---', '...'].includes(s);
+}
+
+/**
+ * Kiểm tra xem kết quả OCR từ Vision AI có thực sự là vé máy bay hợp lệ hay không
+ */
+function validateFlightTicketExtraction(rawTicket) {
+  if (!rawTicket || typeof rawTicket !== 'object') {
+    return { valid: false, reason: 'Không trích xuất được dữ liệu hợp lệ từ ảnh.' };
+  }
+
+  if (rawTicket.is_flight_ticket === false || String(rawTicket.is_flight_ticket).trim().toLowerCase() === 'false') {
+    const customReason = isMeaningfulField(rawTicket.rejection_reason)
+      ? String(rawTicket.rejection_reason).trim()
+      : 'Ảnh tải lên không phải là vé máy bay hoặc thẻ lên tàu bay (boarding pass).';
+    return { valid: false, reason: customReason };
+  }
+
+  const hasFlightNumber = isMeaningfulField(rawTicket.flight_number);
+  const hasAirline = isMeaningfulField(rawTicket.airline);
+  const hasRoute =
+    isMeaningfulField(rawTicket.departure_iata) ||
+    isMeaningfulField(rawTicket.arrival_iata) ||
+    isMeaningfulField(rawTicket.departure_city) ||
+    isMeaningfulField(rawTicket.arrival_city);
+  const hasPnr = isMeaningfulField(rawTicket.pnr);
+  const hasPassenger = isMeaningfulField(rawTicket.passenger_name);
+  const hasDepTime = isMeaningfulField(rawTicket.departure_time);
+
+  const signalCount = [hasFlightNumber, hasAirline, hasRoute, hasPnr, hasPassenger, hasDepTime].filter(Boolean).length;
+  const hasAviationSignal = hasFlightNumber || hasAirline || hasRoute || hasPnr;
+
+  if (signalCount < 2 || !hasAviationSignal) {
+    const fallbackReason = isMeaningfulField(rawTicket.rejection_reason)
+      ? String(rawTicket.rejection_reason).trim()
+      : 'Ảnh không chứa đầy đủ thông tin nhận diện vé máy bay (hãng bay, số hiệu chuyến bay, hành trình hoặc mã đặt chỗ).';
+    return { valid: false, reason: fallbackReason };
+  }
+
+  return { valid: true, reason: '' };
+}
+
 async function extractTicketFromBase64(base64Image, mimeType = 'image/jpeg') {
-  const prompt = `Bạn là chuyên gia bóc tách dữ liệu vé máy bay (Air Ticket OCR Expert).
-Hãy trích xuất thông tin từ ảnh vé máy bay/boarding pass này và trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
+  const prompt = `Bạn là chuyên gia kiểm duyệt và bóc tách dữ liệu vé máy bay (Air Ticket OCR & Classification Expert).
+Bước 1: Kiểm tra xem ảnh có phải là vé máy bay, e-ticket, xác nhận đặt vé máy bay, hoặc thẻ lên tàu bay (boarding pass) hay không.
+- Nếu KHÔNG phải vé máy bay (ví dụ: ảnh cá nhân, phong cảnh, hóa đơn ăn uống/mua sắm, vé xe/vé tàu, ảnh chụp màn hình chat không có thông tin chuyến bay, ảnh mờ không đọc được), đặt "is_flight_ticket": false, ghi ngắn gọn lý do bằng tiếng Việt vào "rejection_reason" (không dùng emoji), và để trống "" các trường còn lại (tuyệt đối không tự bịa dữ liệu).
+- Nếu ĐÚNG là vé máy bay/boarding pass, đặt "is_flight_ticket": true, "rejection_reason": "", và trích xuất chính xác các trường bên dưới.
+
+Trả về DUY NHẤT một JSON hợp lệ (không kèm markdown ngoài json):
 {
+  "is_flight_ticket": true,
+  "rejection_reason": "",
   "passenger_name": "Tên đầy đủ hành khách in hoa không dấu",
   "airline": "Tên hãng bay (Vietnam Airlines, Vietjet Air, Bamboo, v.v.)",
   "flight_number": "Mã chuyến bay (ví dụ: VN214, VJ123)",
@@ -105,6 +156,9 @@ Hãy trích xuất thông tin từ ảnh vé máy bay/boarding pass này và tr�
 
   const raw = await callOpenRouter(payload);
   const parsed = cleanJsonResponse(raw);
+  if (typeof parsed.is_flight_ticket === 'string') {
+    parsed.is_flight_ticket = parsed.is_flight_ticket.trim().toLowerCase() === 'true';
+  }
   if (!parsed.ticket_price || parsed.ticket_price === '0' || parsed.ticket_price === 0 || String(parsed.ticket_price).toLowerCase() === 'null') {
     parsed.ticket_price = 'Chưa rõ';
   }
@@ -305,6 +359,7 @@ Quy tắc bắt buộc:
 
 module.exports = {
   extractTicketFromBase64,
+  validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
   parseEditSavedTripRequest,

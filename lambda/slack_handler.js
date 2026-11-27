@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const {
   extractTicketFromBase64,
+  validateFlightTicketExtraction,
   parsePurchaseRequestChat,
   applyConversationalCorrection,
   parseEditSavedTripRequest,
@@ -121,6 +122,8 @@ function formatPassengerName(rawName) {
 
 function normalizeTicketData(ticket) {
   const t = { ...(ticket || {}) };
+  delete t.is_flight_ticket;
+  delete t.rejection_reason;
   const depIata = (t.departure_iata || 'SGN').trim().toUpperCase();
   const arrIata = (t.arrival_iata || 'HAN').trim().toUpperCase();
 
@@ -582,16 +585,16 @@ async function handleSlackEvent(event) {
   const imageFiles = rawFiles.filter(isImageFile);
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 1: Có ảnh vé máy bay đính kèm -> Quét OCR & Hỏi xác nhận
+  // TRƯỜNG HỢP 1: Có ảnh đính kèm -> Xác nhận đã nhận, phân tích & từ chối nếu không phải vé máy bay
   // -------------------------------------------------------------
   if (imageFiles.length > 0) {
     let file = imageFiles[0];
 
-    // Phản hồi tức thì không dùng icon AI
+    // Phản hồi tức thì xác nhận đã nhận ảnh và đang phân tích (không dùng icon AI)
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "Đã nhận được ảnh vé máy bay. Đang tiến hành xử lý thông tin..."
+      text: "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin..."
     });
 
     try {
@@ -607,6 +610,17 @@ async function handleSlackEvent(event) {
 
       const base64Data = await downloadSlackFile(downloadUrl);
       const rawTicketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+
+      // Kiểm tra phân loại: chỉ tiếp tục nếu ảnh thực sự là vé máy bay / boarding pass
+      const validation = validateFlightTicketExtraction(rawTicketInfo);
+      if (!validation.valid) {
+        await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `Từ chối xử lý ảnh: ${validation.reason}\nVui lòng gửi đúng ảnh vé máy bay, e-ticket hoặc thẻ lên tàu bay (boarding pass) rõ nét để hệ thống trích xuất thông tin.`
+        });
+        return;
+      }
 
       // Lấy thông tin tài khoản người dùng Slack đã gửi ảnh vé
       const senderUserId = event.user || file.user;
