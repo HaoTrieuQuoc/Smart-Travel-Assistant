@@ -84,6 +84,7 @@ const EventEmitter = require('events');
 const outboundCalls = [];
 let sheetsFailure = false;
 let mockVisionResponse = null;
+let mockSheetRows = [];
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: 'e2e@test.local',
   private_key: require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' })
@@ -135,7 +136,9 @@ https.request = function(options, callback) {
           }));
         } else {
           const urlPath = typeof options === 'object' ? (options.path || '') : '';
-          if (urlPath.includes('files.list')) {
+          if (hostname.includes('sheets.googleapis.com') && (!options.method || options.method === 'GET')) {
+            res.emit('data', JSON.stringify({ values: mockSheetRows }));
+          } else if (urlPath.includes('files.list')) {
             // Mô phỏng kênh có file vé cũ từ nhiều ngày trước (tránh tái diễn lỗi OCR nhầm file cũ)
             res.emit('data', JSON.stringify({
               ok: true,
@@ -948,6 +951,115 @@ async function runE2E() {
   } catch (e) {
     mockVisionResponse = null;
     recordE2E('E2E-FLOW-24', 'Multi-Image Upload Creates Distinct Drafts With TTL', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 25-28: Multi-Image Modal Key, Reminder Reset, PR Idempotency, Cancelled Edit & Dept Default
+  // --------------------------------------------------------------------------
+  try {
+    const multiChannel = 'C0CH1CC22FL';
+    const multiTs = '1700000600.000100';
+    const key2 = `DRAFT#${multiChannel}#${multiTs}#2`;
+    const callsBefore = outboundCalls.length;
+    await handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'block_actions',
+        user: { id: 'U_MULTI_1' },
+        channel: { id: multiChannel },
+        trigger_id: 'TRIG_MULTI_2',
+        message: { ts: '1700000000.000200', thread_ts: multiTs },
+        actions: [{ action_id: 'open_edit_ticket_modal', value: JSON.stringify({ _draft_key: key2 }) }]
+      }))}`
+    }), {});
+
+    const viewCall = outboundCalls.slice(callsBefore).find(c => c.url.includes('views.open'));
+    const openedMeta = viewCall ? JSON.parse(JSON.parse(viewCall.body).view.private_metadata) : {};
+
+    await handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'view_submission',
+        user: { id: 'U_MULTI_1' },
+        view: {
+          callback_id: 'edit_ticket_modal_submit',
+          private_metadata: JSON.stringify(openedMeta),
+          state: {
+            values: {
+              name_block: { name_input: { value: 'PHAM VAN MULTI UPDATED' } },
+              airline_block: { airline_input: { value: 'Bamboo Airways' } },
+              flight_block: { flight_input: { value: 'QH202' } },
+              dep_iata_block: { dep_iata_input: { value: 'SGN' } },
+              arr_iata_block: { arr_iata_input: { value: 'HAN' } },
+              dep_time_block: { dep_time_input: { value: '2026-12-22 10:00' } },
+              pnr_block: { pnr_input: { value: 'MLT002' } }
+            }
+          }
+        }
+      }))}`
+    }), {});
+
+    const pass = openedMeta.draft_key === key2 &&
+      dbStore.get(key2)?.ticket_data?.pnr === 'MLT002' &&
+      !dbStore.has(`DRAFT#${multiChannel}#${multiTs}`);
+    recordE2E('E2E-FLOW-25', 'Edit Modal Preserves Multi-Image _draft_key', pass);
+  } catch (e) {
+    recordE2E('E2E-FLOW-25', 'Edit Modal Preserves Multi-Image _draft_key', false, e.message);
+  }
+
+  try {
+    const { updateGoogleSheetAndDynamoTrip } = require('../lambda/slack_handler');
+    const activeTripId = tripKeys().find(k => dbStore.get(k)?.status === 'APPROVED');
+    const existing = dbStore.get(activeTripId);
+    dbStore.set(activeTripId, { ...existing, reminder_sent: 'SENT' });
+    mockSheetRows = [[activeTripId, existing.pr_number, 'APPROVED', existing.passenger_name, existing.department, existing.passenger_email, existing.slack_handle, existing.airline, existing.flight_number, existing.departure_city, existing.departure_iata, existing.arrival_city, existing.arrival_iata, existing.departure_time, existing.arrival_time || '', existing.pnr, existing.ticket_class, existing.ticket_price, existing.payment_method, existing.purpose, 'SENT', 'VALID', '']];
+    const res = await updateGoogleSheetAndDynamoTrip(activeTripId, { departure_time: '2026-12-28 11:30' }, 'Dời giờ bay');
+    mockSheetRows = [];
+    const pass = dbStore.get(activeTripId)?.reminder_sent === 'PENDING' && res.currentRow[20] === 'PENDING';
+    recordE2E('E2E-FLOW-26', 'Rescheduling Departure Time Resets reminder_sent to PENDING', pass);
+  } catch (e) {
+    mockSheetRows = [];
+    recordE2E('E2E-FLOW-26', 'Rescheduling Departure Time Resets reminder_sent to PENDING', false, e.message);
+  }
+
+  try {
+    const prKeys = [...dbStore.keys()].filter(k => k.startsWith('PR-'));
+    const approvedPrId = prKeys[prKeys.length - 1];
+    const callsBefore = outboundCalls.length;
+    await handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'block_actions',
+        user: { id: 'U_HR_2' },
+        channel: { id: 'C0CGLFPNW7R' },
+        actions: [{ action_id: 'reject_pr', value: approvedPrId }],
+        response_url: 'https://hooks.slack.com/actions/test/pr_reject_again'
+      }))}`
+    }), {});
+    const blockedMsg = outboundCalls.slice(callsBefore).some(c => c.body.includes('đã được xử lý trước đó'));
+    recordE2E('E2E-FLOW-27', 'PR Approval Is Idempotent (Blocks Re-Reject After Approve)', dbStore.get(approvedPrId)?.status === 'APPROVED_PR' && blockedMsg);
+  } catch (e) {
+    recordE2E('E2E-FLOW-27', 'PR Approval Is Idempotent (Blocks Re-Reject After Approve)', false, e.message);
+  }
+
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    const cancelledTripId = tripKeys().find(k => dbStore.get(k)?.status === 'CANCELLED');
+    const callsBefore = outboundCalls.length;
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0CGLFPNW7R',
+      user: 'U_HR_1',
+      text: `Sửa giờ bay của ${cancelledTripId} thành 19:00`,
+      ts: '1700000700.000100'
+    });
+    const blockedCancelled = outboundCalls.slice(callsBefore).some(c => c.body.includes('CANCELLED') && c.body.includes('không thể chỉnh sửa'));
+    const empDraft = dbStore.get('DRAFT#C0CH1CC22FL#1700000301.000100');
+    const workerTrip = tripKeys().map(k => dbStore.get(k)).find(t => t.flight_number === 'VN216');
+    const deptOk = empDraft?.ticket_data?.department === 'Nhân Viên' && workerTrip?.department === 'Quản Lý';
+    recordE2E('E2E-FLOW-28', 'Blocks Editing CANCELLED Trips & Applies Channel Dept Defaults', blockedCancelled && deptOk);
+  } catch (e) {
+    recordE2E('E2E-FLOW-28', 'Blocks Editing CANCELLED Trips & Applies Channel Dept Defaults', false, e.message);
   }
 
   // --------------------------------------------------------------------------

@@ -434,6 +434,13 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
   if (updatedFields.purpose) currentRow[19] = normalizedMerged.purpose;
 
   currentRow[21] = 'VALID';
+  const departureChanged = Boolean(
+    updatedFields.departure_time &&
+    updatedFields.departure_time.trim() !== String(existingTrip.departure_time || '').trim()
+  );
+  if (departureChanged) {
+    currentRow[20] = 'PENDING';
+  }
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
   currentRow[22] = `[AI UPDATE ${nowIso}] ${explanation || 'Đã sửa qua Slack'}`;
 
@@ -458,6 +465,7 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
     ...existingTrip,
     ...normalizedMerged,
     trip_id: tripId,
+    reminder_sent: departureChanged ? 'PENDING' : (existingTrip.reminder_sent || 'PENDING'),
     booking_fingerprint: computeBookingFingerprint(normalizedMerged),
     audit_status: 'VALID',
     last_synced_at: new Date().toISOString()
@@ -851,7 +859,10 @@ async function handleSlackEvent(event) {
           }
         }
 
-        // Chuẩn hóa toàn bộ dữ liệu theo quy chuẩn đồng bộ
+        // Chuẩn hóa toàn bộ dữ liệu theo quy chuẩn đồng bộ (mặc định phòng ban theo kênh)
+        if (!rawTicketInfo.department) {
+          rawTicketInfo.department = isEmployeeChannel ? 'Nhân viên' : 'Quản lý';
+        }
         const ticketInfo = normalizeTicketData(rawTicketInfo);
         const draftScope = filesToProcess.length > 1 ? `${threadTs}#${idx + 1}` : threadTs;
         const draftKey = buildDraftKey(channelId, draftScope);
@@ -930,6 +941,15 @@ async function handleSlackEvent(event) {
           channel: channelId,
           thread_ts: threadTs,
           text: `Không tìm thấy mã chuyến đi \`${tripId}\` trong hệ thống. Vui lòng kiểm tra lại mã TRIP.`
+        });
+        return;
+      }
+
+      if (String(existingTripRes.Item.status || '').toUpperCase() === 'CANCELLED') {
+        await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `Chuyến công tác \`${tripId}\` đã ở trạng thái CANCELLED trước đó và không thể chỉnh sửa.`
         });
         return;
       }
@@ -1397,6 +1417,13 @@ exports.handler = async (event, context) => {
             block_id: "purpose_block",
             element: { type: "plain_text_input", action_id: "purpose_input", multiline: true, placeholder: { type: "plain_text", text: "VD: Gặp đối tác ký kết hợp đồng dự án Q4" } },
             label: { type: "plain_text", text: "Mục Đích Công Tác" }
+          },
+          {
+            type: "input",
+            block_id: "department_block",
+            optional: true,
+            element: { type: "plain_text_input", action_id: "department_input", initial_value: "Quản lý", placeholder: { type: "plain_text", text: "VD: Quản lý, Kinh Doanh, Kỹ Thuật..." } },
+            label: { type: "plain_text", text: "Phòng Ban" }
           }
         ]
       };
@@ -1432,6 +1459,7 @@ exports.handler = async (event, context) => {
           const channelId = meta.channel_id;
           const threadTs = meta.thread_ts;
           const oldMessageTs = meta.message_ts;
+          const explicitDraftKey = meta.draft_key || '';
 
           const depIata = (values.dep_iata_block?.dep_iata_input?.value || '').trim().toUpperCase();
           const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
@@ -1457,7 +1485,17 @@ exports.handler = async (event, context) => {
           let draftOwner = null;
           let existingDraftRecord = null;
           if (channelId) {
-            existingDraftRecord = await getDraftRecord(channelId, threadTs);
+            if (explicitDraftKey) {
+              const explicitRes = await docClient.send(new GetCommand({
+                TableName: DYNAMODB_TABLE,
+                Key: { trip_id: explicitDraftKey }
+              }));
+              if (explicitRes.Item) {
+                existingDraftRecord = { key: explicitDraftKey, item: explicitRes.Item };
+              }
+            } else {
+              existingDraftRecord = await getDraftRecord(channelId, threadTs);
+            }
             draftOwner = existingDraftRecord?.item?.ticket_data || null;
             if (!canActOnDraft(channelId, payload.user?.id, draftOwner)) {
               return {
@@ -1507,19 +1545,34 @@ exports.handler = async (event, context) => {
           // Lưu bản nháp vào DynamoDB và cập nhật tin nhắn
           if (channelId) {
             const currentDraft = existingDraftRecord?.item || null;
+            const targetDraftKey = explicitDraftKey || buildDraftKey(channelId, threadTs);
+            const hasExplicitDraftKey = Boolean(explicitDraftKey && explicitDraftKey !== buildDraftKey(channelId, threadTs));
 
             // 1. Gửi thẻ xem trước đã cập nhật vào kênh (thẻ mới nhất có đầy đủ nút thao tác)
             let newMsgTs = null;
             try {
               const updatedCard = buildTicketPreviewCard(channelId, threadTs, updatedTicket, true, true);
+              if (hasExplicitDraftKey) {
+                const payloadWithKey = { ...updatedTicket, _draft_key: targetDraftKey };
+                updatedCard.blocks = updatedCard.blocks.map(b => {
+                  if (b.type === 'actions' && Array.isArray(b.elements)) {
+                    return {
+                      ...b,
+                      elements: b.elements.map(el => el.action_id === 'cancel_ticket'
+                        ? { ...el, value: JSON.stringify({ _draft_key: targetDraftKey }) }
+                        : { ...el, value: JSON.stringify(payloadWithKey) })
+                    };
+                  }
+                  return b;
+                });
+              }
               const postRes = await postSlackMessage(channelId, updatedCard);
               newMsgTs = postRes?.data?.ts || postRes?.ts;
             } catch (err) {
               console.error('Error posting updated preview card:', err);
             }
 
-            // 2. Lưu bản nháp mới vào DynamoDB kèm newMsgTs theo khóa thread
-            const targetDraftKey = buildDraftKey(channelId, threadTs);
+            // 2. Lưu bản nháp mới vào DynamoDB kèm newMsgTs theo khóa thread/ảnh
             await docClient.send(new PutCommand({
               TableName: DYNAMODB_TABLE,
               Item: {
@@ -1573,6 +1626,7 @@ exports.handler = async (event, context) => {
           const pnr = (values.pnr_block?.pnr_input?.value || 'N/A').trim().toUpperCase();
           const price = (values.cost_block?.cost_input?.value || '0').replace(/[^0-9]/g, '');
           const purpose = values.purpose_block?.purpose_input?.value || 'Công tác nội bộ';
+          const department = (values.department_block?.department_input?.value || '').trim() || 'Quản lý';
 
           const manualErrors = validateModalTicketInputs({
             depIata,
@@ -1624,6 +1678,7 @@ exports.handler = async (event, context) => {
             pnr: pnr,
             ticket_class: 'Economy',
             ticket_price: price && price !== '0' ? price : 'Chưa rõ',
+            department: department,
             purpose: purpose
           };
 
@@ -1688,19 +1743,21 @@ exports.handler = async (event, context) => {
           const messageTs = payload.message?.ts || payload.container?.message_ts;
 
           let ticketData = null;
+          let resolvedDraftKey = parsedActionValue?._draft_key || '';
           if (channelId) {
             try {
-              const draftRecord = await getDraftRecord(channelId, threadTs);
+              const draftRecord = await resolveDraftForAction();
               if (draftRecord?.item?.ticket_data) {
                 ticketData = draftRecord.item.ticket_data;
+                resolvedDraftKey = draftRecord.key || resolvedDraftKey;
               }
             } catch (e) {
               console.log('Error reading draft for edit modal:', e);
             }
           }
 
-          if (!ticketData && action.value) {
-            try { ticketData = JSON.parse(action.value); } catch {}
+          if (!ticketData && parsedActionValue) {
+            ticketData = parsedActionValue;
           }
           ticketData = ticketData || {};
 
@@ -1713,7 +1770,8 @@ exports.handler = async (event, context) => {
             private_metadata: JSON.stringify({
               channel_id: channelId,
               thread_ts: threadTs,
-              message_ts: messageTs
+              message_ts: messageTs,
+              draft_key: resolvedDraftKey
             }),
             blocks: [
               {
@@ -1840,7 +1898,7 @@ exports.handler = async (event, context) => {
                 element: {
                   type: "plain_text_input",
                   action_id: "department_input",
-                  initial_value: ticketData.department || "Nhân sự / Quản lý"
+                  initial_value: ticketData.department || (getChannelRole(channelId) === ROLES.EMPLOYEE ? "Nhân Viên" : "Quản Lý")
                 },
                 label: { type: "plain_text", text: "Phòng ban" }
               },
@@ -2079,6 +2137,13 @@ exports.handler = async (event, context) => {
             ]
           });
 
+          if (payload.message?.ts && channelId && Array.isArray(payload.message.blocks)) {
+            const lockedBlocks = payload.message.blocks.map(b => b.type === 'actions'
+              ? { type: "context", elements: [{ type: "mrkdwn", text: `_Đã gửi phê duyệt với mã \`${prId}\`._` }] }
+              : b);
+            await updateSlackMessage(channelId, payload.message.ts, lockedBlocks).catch(() => {});
+          }
+
           if (payload.response_url) {
             await makeRequest(payload.response_url, {
               method: 'POST',
@@ -2100,19 +2165,44 @@ exports.handler = async (event, context) => {
           const prId = String(action.value || '').trim();
           const nextStatus = action.action_id === 'approve_pr' ? 'APPROVED_PR' : 'REJECTED_PR';
           const prRes = await docClient.send(new GetCommand({ TableName: DYNAMODB_TABLE, Key: { trip_id: prId } }));
-          if (prRes.Item) {
-            await docClient.send(new PutCommand({
-              TableName: DYNAMODB_TABLE,
-              Item: {
-                ...prRes.Item,
-                status: nextStatus,
-                reviewed_by: payload.user?.id || '',
-                reviewed_at: new Date().toISOString()
-              }
-            }));
+          if (!prRes.Item) {
+            if (payload.response_url) {
+              await makeRequest(payload.response_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              }, { response_type: 'ephemeral', replace_original: false, text: `Không tìm thấy Purchase Request \`${prId}\`.` });
+            }
+            return { statusCode: 200, body: '' };
           }
+          if (prRes.Item.status !== 'PENDING_APPROVAL') {
+            if (payload.response_url) {
+              await makeRequest(payload.response_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              }, { response_type: 'ephemeral', replace_original: false, text: `Purchase Request \`${prId}\` đã được xử lý trước đó (Trạng thái: ${prRes.Item.status}).` });
+            }
+            return { statusCode: 200, body: '' };
+          }
+
+          await docClient.send(new PutCommand({
+            TableName: DYNAMODB_TABLE,
+            Item: {
+              ...prRes.Item,
+              status: nextStatus,
+              reviewed_by: payload.user?.id || '',
+              reviewed_at: new Date().toISOString()
+            }
+          }));
+
+          const label = nextStatus === 'APPROVED_PR' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI';
+          if (payload.message?.ts && channelId && Array.isArray(payload.message.blocks)) {
+            const lockedBlocks = payload.message.blocks.map(b => b.type === 'actions'
+              ? { type: "context", elements: [{ type: "mrkdwn", text: `_${label} bởi <@${payload.user?.id || 'HR'}>._` }] }
+              : b);
+            await updateSlackMessage(channelId, payload.message.ts, lockedBlocks).catch(() => {});
+          }
+
           if (payload.response_url) {
-            const label = nextStatus === 'APPROVED_PR' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI';
             await makeRequest(payload.response_url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
