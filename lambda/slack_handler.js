@@ -76,6 +76,37 @@ function canActOnDraft(channelId, userId, ticket) {
 
 const NOT_DRAFT_OWNER_MESSAGE = 'Chỉ người đã tải vé lên hoặc bộ phận HR mới được thao tác trên bản nháp này.';
 
+// Khóa bản nháp theo từng thread trong kênh để nhiều nhân viên gửi vé cùng lúc không ghi đè nhau
+function buildDraftKey(channelId, threadTs) {
+  if (!channelId) return null;
+  return threadTs ? `DRAFT#${channelId}#${threadTs}` : `DRAFT#${channelId}`;
+}
+
+async function getDraftRecord(channelId, threadTs) {
+  if (!channelId) return null;
+  if (threadTs) {
+    const scopedKey = buildDraftKey(channelId, threadTs);
+    const scopedRes = await docClient.send(new GetCommand({
+      TableName: DYNAMODB_TABLE,
+      Key: { trip_id: scopedKey }
+    }));
+    if (scopedRes.Item) {
+      return { key: scopedKey, item: scopedRes.Item };
+    }
+  }
+
+  // Fallback tương thích ngược với khóa cũ DRAFT#<channelId> nếu khớp thread_ts
+  const legacyKey = `DRAFT#${channelId}`;
+  const legacyRes = await docClient.send(new GetCommand({
+    TableName: DYNAMODB_TABLE,
+    Key: { trip_id: legacyKey }
+  }));
+  if (legacyRes.Item && (!threadTs || !legacyRes.Item.thread_ts || legacyRes.Item.thread_ts === threadTs)) {
+    return { key: legacyKey, item: legacyRes.Item };
+  }
+  return null;
+}
+
 // Dictionary chuẩn hóa thành phố & mã IATA sân bay
 const CITY_MAP = {
   // Việt Nam
@@ -650,11 +681,11 @@ async function handleSlackEvent(event) {
       const postRes = await postSlackMessage(channelId, card);
       const postedMsgTs = postRes?.data?.ts || postRes?.ts;
 
-      // Lưu bản nháp (Draft) vào DynamoDB kèm message_ts để hỗ trợ quản lý nút bấm khi chỉnh sửa
+      // Lưu bản nháp (Draft) vào DynamoDB theo khóa riêng của thread để tránh ghi đè khi nhiều người gửi vé cùng lúc
       await docClient.send(new PutCommand({
         TableName: DYNAMODB_TABLE,
         Item: {
-          trip_id: `DRAFT#${channelId}`,
+          trip_id: buildDraftKey(channelId, threadTs),
           channel_id: channelId,
           thread_ts: threadTs,
           message_ts: postedMsgTs,
@@ -765,19 +796,20 @@ async function handleSlackEvent(event) {
 
   // -------------------------------------------------------------
   // TRƯỜNG HỢP 3: Vòng lặp sửa bản nháp trước khi lưu (Pre-save Draft Loop)
-  // Kiểm tra xem có vé nháp đang chờ xác nhận hay không
+  // Chỉ tra cứu & xử lý bản nháp khi người dùng trả lời trong một thread cụ thể
   // -------------------------------------------------------------
   let currentDraft = null;
-  try {
-    const draftRes = await docClient.send(new GetCommand({
-      TableName: DYNAMODB_TABLE,
-      Key: { trip_id: `DRAFT#${channelId}` }
-    }));
-    if (draftRes.Item && draftRes.Item.ticket_data) {
-      currentDraft = draftRes.Item;
+  let currentDraftKey = null;
+  if (event.thread_ts) {
+    try {
+      const draftRecord = await getDraftRecord(channelId, event.thread_ts);
+      if (draftRecord?.item?.ticket_data) {
+        currentDraft = draftRecord.item;
+        currentDraftKey = draftRecord.key;
+      }
+    } catch (e) {
+      console.error('Error fetching draft:', e);
     }
-  } catch (e) {
-    console.error('Error fetching draft:', e);
   }
 
   // Chỉ xử lý sửa bản nháp khi người dùng trả lời ĐÚNG thread chứa bản nháp đó
@@ -799,7 +831,7 @@ async function handleSlackEvent(event) {
     if (/(hủy|huỷ|cancel|thôi|bỏ)/i.test(userText)) {
       await docClient.send(new DeleteCommand({
         TableName: DYNAMODB_TABLE,
-        Key: { trip_id: `DRAFT#${channelId}` }
+        Key: { trip_id: currentDraftKey || buildDraftKey(channelId, threadTs) }
       }));
       await postSlackMessage(channelId, {
         channel: channelId,
@@ -830,11 +862,12 @@ async function handleSlackEvent(event) {
       const postRes = await postSlackMessage(channelId, updatedCard);
       const newMsgTs = postRes?.data?.ts || postRes?.ts;
 
-      // Lưu lại bản nháp mới vào DynamoDB kèm message_ts
+      // Lưu lại bản nháp mới vào DynamoDB kèm message_ts theo thread
+      const targetDraftKey = buildDraftKey(channelId, threadTs);
       await docClient.send(new PutCommand({
         TableName: DYNAMODB_TABLE,
         Item: {
-          trip_id: `DRAFT#${channelId}`,
+          trip_id: targetDraftKey,
           channel_id: channelId,
           thread_ts: threadTs,
           message_ts: newMsgTs,
@@ -842,6 +875,9 @@ async function handleSlackEvent(event) {
           created_at: new Date().toISOString()
         }
       }));
+      if (currentDraftKey && currentDraftKey !== targetDraftKey) {
+        await docClient.send(new DeleteCommand({ TableName: DYNAMODB_TABLE, Key: { trip_id: currentDraftKey } })).catch(() => {});
+      }
 
       // Vô hiệu hóa nút bấm ở tin nhắn trước đó nếu có
       if (currentDraft?.message_ts && currentDraft.message_ts !== newMsgTs) {
@@ -1183,12 +1219,10 @@ exports.handler = async (event, context) => {
           const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
 
           let draftOwner = null;
+          let existingDraftRecord = null;
           if (channelId) {
-            const draftRes = await docClient.send(new GetCommand({
-              TableName: DYNAMODB_TABLE,
-              Key: { trip_id: `DRAFT#${channelId}` }
-            }));
-            draftOwner = draftRes.Item?.ticket_data || null;
+            existingDraftRecord = await getDraftRecord(channelId, threadTs);
+            draftOwner = existingDraftRecord?.item?.ticket_data || null;
             if (!canActOnDraft(channelId, payload.user?.id, draftOwner)) {
               return {
                 statusCode: 200,
@@ -1236,14 +1270,7 @@ exports.handler = async (event, context) => {
 
           // Lưu bản nháp vào DynamoDB và cập nhật tin nhắn
           if (channelId) {
-            let currentDraft = null;
-            try {
-              const draftRes = await docClient.send(new GetCommand({
-                TableName: DYNAMODB_TABLE,
-                Key: { trip_id: `DRAFT#${channelId}` }
-              }));
-              currentDraft = draftRes.Item;
-            } catch (e) {}
+            const currentDraft = existingDraftRecord?.item || null;
 
             // 1. Gửi thẻ xem trước đã cập nhật vào kênh (thẻ mới nhất có đầy đủ nút thao tác)
             let newMsgTs = null;
@@ -1255,11 +1282,12 @@ exports.handler = async (event, context) => {
               console.error('Error posting updated preview card:', err);
             }
 
-            // 2. Lưu bản nháp mới vào DynamoDB kèm newMsgTs
+            // 2. Lưu bản nháp mới vào DynamoDB kèm newMsgTs theo khóa thread
+            const targetDraftKey = buildDraftKey(channelId, threadTs);
             await docClient.send(new PutCommand({
               TableName: DYNAMODB_TABLE,
               Item: {
-                trip_id: `DRAFT#${channelId}`,
+                trip_id: targetDraftKey,
                 channel_id: channelId,
                 thread_ts: threadTs,
                 message_ts: newMsgTs,
@@ -1267,6 +1295,9 @@ exports.handler = async (event, context) => {
                 created_at: new Date().toISOString()
               }
             }));
+            if (existingDraftRecord?.key && existingDraftRecord.key !== targetDraftKey) {
+              await docClient.send(new DeleteCommand({ TableName: DYNAMODB_TABLE, Key: { trip_id: existingDraftRecord.key } })).catch(() => {});
+            }
 
             // 3. Cập nhật tin nhắn cũ: Gỡ bỏ toàn bộ các nút [Xác nhận], [Chỉnh sửa], [Hủy bỏ]
             const oldTimestamps = new Set();
@@ -1363,14 +1394,12 @@ exports.handler = async (event, context) => {
       if (payload.type === 'block_actions') {
         const action = payload.actions?.[0];
         const channelId = payload.channel?.id || payload.container?.channel_id;
+        const actionThreadTs = payload.message?.thread_ts || payload.message?.ts;
 
         // B0. Chặn người không có quyền thao tác trên bản nháp
         if (['open_edit_ticket_modal', 'confirm_save_ticket', 'cancel_ticket'].includes(action?.action_id)) {
-          const draftRes = await docClient.send(new GetCommand({
-            TableName: DYNAMODB_TABLE,
-            Key: { trip_id: `DRAFT#${channelId}` }
-          }));
-          let ticket = draftRes.Item?.ticket_data;
+          const draftRecord = await getDraftRecord(channelId, actionThreadTs);
+          let ticket = draftRecord?.item?.ticket_data;
           if (!ticket && action.value) {
             try { ticket = JSON.parse(action.value); } catch {}
           }
@@ -1388,18 +1417,15 @@ exports.handler = async (event, context) => {
         // B1. Người dùng bấm nút "Chỉnh sửa" -> Mở Modal Popup Form
         if (action?.action_id === 'open_edit_ticket_modal') {
           const triggerId = payload.trigger_id;
-          const threadTs = payload.message?.thread_ts || payload.message?.ts;
+          const threadTs = actionThreadTs;
           const messageTs = payload.message?.ts || payload.container?.message_ts;
 
           let ticketData = null;
           if (channelId) {
             try {
-              const draftRes = await docClient.send(new GetCommand({
-                TableName: DYNAMODB_TABLE,
-                Key: { trip_id: `DRAFT#${channelId}` }
-              }));
-              if (draftRes.Item?.ticket_data) {
-                ticketData = draftRes.Item.ticket_data;
+              const draftRecord = await getDraftRecord(channelId, threadTs);
+              if (draftRecord?.item?.ticket_data) {
+                ticketData = draftRecord.item.ticket_data;
               }
             } catch (e) {
               console.log('Error reading draft for edit modal:', e);
@@ -1602,15 +1628,13 @@ exports.handler = async (event, context) => {
         // B2. Người dùng bấm nút "Xác nhận"
         if (action?.action_id === 'confirm_save_ticket') {
           let ticketData = null;
+          let draftRecord = null;
 
           if (channelId) {
             try {
-              const draftRes = await docClient.send(new GetCommand({
-                TableName: DYNAMODB_TABLE,
-                Key: { trip_id: `DRAFT#${channelId}` }
-              }));
-              if (draftRes.Item?.ticket_data) {
-                ticketData = draftRes.Item.ticket_data;
+              draftRecord = await getDraftRecord(channelId, actionThreadTs);
+              if (draftRecord?.item?.ticket_data) {
+                ticketData = draftRecord.item.ticket_data;
               }
             } catch (e) {
               console.log('Could not fetch draft on confirm:', e);
@@ -1653,19 +1677,18 @@ exports.handler = async (event, context) => {
 
             if (channelId) {
               try {
-                const draftRes = await docClient.send(new GetCommand({
-                  TableName: DYNAMODB_TABLE,
-                  Key: { trip_id: `DRAFT#${channelId}` }
-                }));
-                const draftMsgTs = draftRes.Item?.message_ts;
+                const currentRecord = draftRecord || await getDraftRecord(channelId, actionThreadTs);
+                const draftMsgTs = currentRecord?.item?.message_ts;
                 if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
-                  const disabledCard = buildTicketPreviewCard(channelId, null, draftRes.Item?.ticket_data || ticketData, false, false);
+                  const disabledCard = buildTicketPreviewCard(channelId, null, currentRecord?.item?.ticket_data || ticketData, false, false);
                   await updateSlackMessage(channelId, draftMsgTs, disabledCard.blocks).catch(() => {});
                 }
-                await docClient.send(new DeleteCommand({
-                  TableName: DYNAMODB_TABLE,
-                  Key: { trip_id: `DRAFT#${channelId}` }
-                }));
+                if (currentRecord?.key) {
+                  await docClient.send(new DeleteCommand({
+                    TableName: DYNAMODB_TABLE,
+                    Key: { trip_id: currentRecord.key }
+                  }));
+                }
               } catch (e) {}
             }
 
@@ -1685,19 +1708,18 @@ exports.handler = async (event, context) => {
         } else if (action?.action_id === 'cancel_ticket') {
           if (channelId) {
             try {
-              const draftRes = await docClient.send(new GetCommand({
-                TableName: DYNAMODB_TABLE,
-                Key: { trip_id: `DRAFT#${channelId}` }
-              }));
-              const draftMsgTs = draftRes.Item?.message_ts;
+              const draftRecord = await getDraftRecord(channelId, actionThreadTs);
+              const draftMsgTs = draftRecord?.item?.message_ts;
               if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
-                const disabledCard = buildTicketPreviewCard(channelId, null, draftRes.Item?.ticket_data || {}, false, false);
+                const disabledCard = buildTicketPreviewCard(channelId, null, draftRecord?.item?.ticket_data || {}, false, false);
                 await updateSlackMessage(channelId, draftMsgTs, disabledCard.blocks).catch(() => {});
               }
-              await docClient.send(new DeleteCommand({
-                TableName: DYNAMODB_TABLE,
-                Key: { trip_id: `DRAFT#${channelId}` }
-              }));
+              if (draftRecord?.key) {
+                await docClient.send(new DeleteCommand({
+                  TableName: DYNAMODB_TABLE,
+                  Key: { trip_id: draftRecord.key }
+                }));
+              }
             } catch (e) {}
           }
           if (payload.response_url) {
@@ -1738,5 +1760,7 @@ module.exports = {
   buildTicketPreviewCard,
   saveTripRecord,
   updateGoogleSheetAndDynamoTrip,
+  buildDraftKey,
+  getDraftRecord,
   handleSlackEvent
 };

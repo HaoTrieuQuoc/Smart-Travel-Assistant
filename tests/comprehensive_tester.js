@@ -59,7 +59,8 @@ const {
   normalizeCity,
   formatPassengerName,
   normalizeTicketData,
-  buildTicketPreviewCard
+  buildTicketPreviewCard,
+  buildDraftKey
 } = require('../lambda/slack_handler');
 
 const {
@@ -909,6 +910,16 @@ try {
     recordTest('TC-OCR-04', 'Image Classification', 'normalizeTicketData strips internal classification fields', 'PASS');
   } else {
     recordTest('TC-OCR-04', 'Image Classification', 'Internal classification fields leaked into normalized ticket', 'FAIL');
+  }
+
+  // TC-DRAFT-01: Thread-scoped draft key isolates concurrent threads in same channel
+  const keyA = buildDraftKey('C0CH1CC22FL', '1700000100.000100');
+  const keyB = buildDraftKey('C0CH1CC22FL', '1700000200.000200');
+  const keyFallback = buildDraftKey('C0CH1CC22FL', null);
+  if (keyA === 'DRAFT#C0CH1CC22FL#1700000100.000100' && keyB === 'DRAFT#C0CH1CC22FL#1700000200.000200' && keyA !== keyB && keyFallback === 'DRAFT#C0CH1CC22FL') {
+    recordTest('TC-DRAFT-01', 'Thread Draft Isolation', 'buildDraftKey generates distinct keys per thread in same channel', 'PASS');
+  } else {
+    recordTest('TC-DRAFT-01', 'Thread Draft Isolation', `Unexpected keys: ${keyA}, ${keyB}, ${keyFallback}`, 'FAIL');
   }
 } catch (e) {
   recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);

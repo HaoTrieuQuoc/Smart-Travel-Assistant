@@ -238,15 +238,15 @@ async function runE2E() {
     const { normalizeTicketData } = require('../lambda/slack_handler');
     const norm = normalizeTicketData(initialTicket);
 
-    dbStore.set(`DRAFT#${channelId}`, {
-      trip_id: `DRAFT#${channelId}`,
+    dbStore.set(`DRAFT#${channelId}#${threadTs}`, {
+      trip_id: `DRAFT#${channelId}#${threadTs}`,
       channel_id: channelId,
       thread_ts: threadTs,
       ticket_data: norm,
       created_at: new Date().toISOString()
     });
 
-    const draft = dbStore.get(`DRAFT#${channelId}`);
+    const draft = dbStore.get(`DRAFT#${channelId}#${threadTs}`);
     const pass = draft &&
       draft.ticket_data.passenger_name === 'Hussin Norhilman' &&
       draft.ticket_data.departure_city === 'Kuala Lumpur' &&
@@ -296,7 +296,7 @@ async function runE2E() {
       body: `payload=${encodeURIComponent(JSON.stringify(modalSubmissionPayload))}`
     }), {});
 
-    const updatedDraft = dbStore.get(`DRAFT#${channelId}`);
+    const updatedDraft = dbStore.get(`DRAFT#${channelId}#${threadTs}`);
     const updateCallMade = outboundCalls.some(call => call.url.includes('chat.update'));
     const pass = res.statusCode === 200 &&
       updatedDraft &&
@@ -323,6 +323,7 @@ async function runE2E() {
       type: 'block_actions',
       user: { id: 'U123456', username: 'quoc_hao' },
       channel: { id: channelId },
+      message: { thread_ts: threadTs },
       actions: [{ action_id: 'cancel_ticket' }],
       response_url: 'https://hooks.slack.com/actions/test/cancel'
     };
@@ -332,7 +333,7 @@ async function runE2E() {
       body: `payload=${encodeURIComponent(JSON.stringify(cancelPayload))}`
     }), {});
 
-    const draftAfterCancel = dbStore.get(`DRAFT#${channelId}`);
+    const draftAfterCancel = dbStore.get(`DRAFT#${channelId}#${threadTs}`);
     const pass = res.statusCode === 200 && draftAfterCancel === undefined;
     recordE2E('E2E-FLOW-04', 'Ticket Cancellation & Draft Deletion', pass);
   } catch (e) {
@@ -684,7 +685,8 @@ async function runE2E() {
     const { handleSlackEvent } = require('../lambda/slack_handler');
     process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'mock_openrouter_key';
     const imgChannel = 'C0CH1CC22FL';
-    const draftKey = `DRAFT#${imgChannel}`;
+    const draftTs = '1700000301.000100';
+    const draftKey = `DRAFT#${imgChannel}#${draftTs}`;
     dbStore.delete(draftKey);
     const callsBefore = outboundCalls.length;
 
@@ -707,7 +709,7 @@ async function runE2E() {
       type: 'message',
       channel: imgChannel,
       user: 'U_EMP_1',
-      ts: '1700000301.000100',
+      ts: draftTs,
       files: [{
         id: 'F_VALID_TICKET',
         name: 'boarding_pass.png',
@@ -727,6 +729,89 @@ async function runE2E() {
   } catch (e) {
     mockVisionResponse = null;
     recordE2E('E2E-FLOW-18', 'Valid Flight Ticket Image Creates Draft & Preview Card', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 19: Concurrent Multi-User Draft Isolation in Same Channel
+  // --------------------------------------------------------------------------
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'mock_openrouter_key';
+    const sharedChannel = 'C0CH1CC22FL';
+    const tsA = '1700000401.000100';
+    const tsB = '1700000402.000200';
+    const keyA = `DRAFT#${sharedChannel}#${tsA}`;
+    const keyB = `DRAFT#${sharedChannel}#${tsB}`;
+    dbStore.delete(keyA);
+    dbStore.delete(keyB);
+
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'TRAN VAN A',
+      airline: 'Vietnam Airlines',
+      flight_number: 'VN201',
+      departure_iata: 'SGN',
+      arrival_iata: 'HAN',
+      departure_time: '2026-12-15 07:00',
+      arrival_time: '2026-12-15 09:10',
+      pnr: 'PNRA01',
+      ticket_class: 'Economy',
+      ticket_price: '1800000'
+    };
+    await handleSlackEvent({
+      type: 'message',
+      channel: sharedChannel,
+      user: 'U_USER_A',
+      ts: tsA,
+      files: [{ id: 'F_A', name: 'ticket_a.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-FA/ticket_a.png' }]
+    });
+
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'LE THI B',
+      airline: 'Vietjet Air',
+      flight_number: 'VJ128',
+      departure_iata: 'HAN',
+      arrival_iata: 'DAD',
+      departure_time: '2026-12-16 14:00',
+      arrival_time: '2026-12-16 15:20',
+      pnr: 'PNRB02',
+      ticket_class: 'Economy',
+      ticket_price: '1200000'
+    };
+    await handleSlackEvent({
+      type: 'message',
+      channel: sharedChannel,
+      user: 'U_USER_B',
+      ts: tsB,
+      files: [{ id: 'F_B', name: 'ticket_b.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-FB/ticket_b.png' }]
+    });
+    mockVisionResponse = null;
+
+    const bothExist = dbStore.has(keyA) && dbStore.has(keyB) &&
+      dbStore.get(keyA).ticket_data.flight_number === 'VN201' &&
+      dbStore.get(keyB).ticket_data.flight_number === 'VJ128';
+
+    // User A cancels their draft -> User B's draft must remain intact
+    await handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'block_actions',
+        user: { id: 'U_USER_A' },
+        channel: { id: sharedChannel },
+        message: { thread_ts: tsA },
+        actions: [{ action_id: 'cancel_ticket' }],
+        response_url: 'https://hooks.slack.com/actions/test/cancelA'
+      }))}`
+    }), {});
+
+    const isolatedAfterCancel = !dbStore.has(keyA) && dbStore.has(keyB) && dbStore.get(keyB).ticket_data.flight_number === 'VJ128';
+    recordE2E('E2E-FLOW-19', 'Concurrent Multi-User Drafts Isolated Per Thread in Same Channel', bothExist && isolatedAfterCancel);
+  } catch (e) {
+    mockVisionResponse = null;
+    recordE2E('E2E-FLOW-19', 'Concurrent Multi-User Drafts Isolated Per Thread in Same Channel', false, e.message);
   }
 
   // --------------------------------------------------------------------------
