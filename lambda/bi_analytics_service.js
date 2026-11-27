@@ -157,9 +157,12 @@ function executeBIQuery(rawItems, plan = {}, nowDate = new Date()) {
     return true;
   });
 
-  // Sort upcoming flights chronologically, otherwise newest/highest cost first
+  // Sort upcoming flights chronologically by airport UTC timestamp, otherwise newest first
   if (queryType === 'UPCOMING_FLIGHTS' || filters.upcoming_days) {
-    filtered.sort((a, b) => String(a.departure_time || '').localeCompare(String(b.departure_time || '')));
+    filtered.sort((a, b) =>
+      parseDepartureTime(a.departure_time, a.departure_iata).getTime() -
+      parseDepartureTime(b.departure_time, b.departure_iata).getTime()
+    );
   } else {
     filtered.sort((a, b) => String(b.departure_time || b.created_at || '').localeCompare(String(a.departure_time || a.created_at || '')));
   }

@@ -1062,6 +1062,36 @@ async function runE2E() {
     recordE2E('E2E-FLOW-28', 'Blocks Editing CANCELLED Trips & Applies Channel Dept Defaults', false, e.message);
   }
 
+  try {
+    const { handleSlackEvent, updateGoogleSheetAndDynamoTrip } = require('../lambda/slack_handler');
+    const callsBefore = outboundCalls.length;
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0UNKNOWN99',
+      user: 'U_STRANGER',
+      text: 'Xin đi công tác Tokyo',
+      ts: '1700000800.000100',
+      files: [{ id: 'F_UNK', name: 'ticket.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-UNK/ticket.png' }]
+    });
+    const blockedUnknown = outboundCalls.slice(callsBefore).some(c => c.body.includes('không nằm trong thẩm quyền')) &&
+      !outboundCalls.slice(callsBefore).some(c => c.url.includes('openrouter'));
+
+    const activeTripId = tripKeys().find(k => dbStore.get(k)?.status === 'APPROVED');
+    const activeTrip = dbStore.get(activeTripId);
+    mockSheetRows = [[activeTripId, activeTrip.pr_number, 'APPROVED', activeTrip.passenger_name]];
+    let rejectedBadTime = false;
+    try {
+      await updateGoogleSheetAndDynamoTrip(activeTripId, { departure_time: '16:30' }, 'Missing date');
+    } catch (err) {
+      rejectedBadTime = err.message.includes('không hợp lệ');
+    }
+    mockSheetRows = [];
+    recordE2E('E2E-FLOW-29', 'Blocks Unknown Channel OCR/PR & Invalid AI Trip Edit Formats', blockedUnknown && rejectedBadTime);
+  } catch (e) {
+    mockSheetRows = [];
+    recordE2E('E2E-FLOW-29', 'Blocks Unknown Channel OCR/PR & Invalid AI Trip Edit Formats', false, e.message);
+  }
+
   // --------------------------------------------------------------------------
   // SUMMARY
   // --------------------------------------------------------------------------

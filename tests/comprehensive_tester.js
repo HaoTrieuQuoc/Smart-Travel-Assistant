@@ -944,7 +944,7 @@ try {
   }
 
   // TC-BI-05: BI filter excludes PR- and CANCELLED records
-  const { filterConfirmedTrips } = require('../lambda/bi_analytics_service');
+  const { filterConfirmedTrips, executeBIQuery } = require('../lambda/bi_analytics_service');
   const biFiltered = filterConfirmedTrips([
     { trip_id: 'TRIP-202612-100001', status: 'APPROVED', ticket_price: '2000000' },
     { trip_id: 'TRIP-202612-100002', status: 'CANCELLED', ticket_price: '5000000' },
@@ -954,6 +954,17 @@ try {
     recordTest('TC-BI-05', 'AI Travel BI Engine', 'Excludes CANCELLED trips and PR- records from BI analytics', 'PASS');
   } else {
     recordTest('TC-BI-05', 'AI Travel BI Engine', `Unexpected filtered items: ${JSON.stringify(biFiltered)}`, 'FAIL');
+  }
+
+  // TC-BI-06: UPCOMING_FLIGHTS sorts by UTC departure time across airport timezones
+  const upcomingSorted = executeBIQuery([
+    { trip_id: 'TRIP-SGN', departure_iata: 'SGN', departure_time: '2026-12-05 08:00', status: 'APPROVED' }, // 01:00 UTC
+    { trip_id: 'TRIP-NRT', departure_iata: 'NRT', departure_time: '2026-12-05 08:30', status: 'APPROVED' }  // 23:30 UTC Dec 4 (earlier!)
+  ], { query_type: 'UPCOMING_FLIGHTS', filters: { upcoming_days: 7 } }, new Date('2026-12-04T20:00:00Z'));
+  if (upcomingSorted.matched_trips.map(t => t.trip_id).join(',') === 'TRIP-NRT,TRIP-SGN') {
+    recordTest('TC-BI-06', 'AI Travel BI Engine', 'Sorts UPCOMING_FLIGHTS by airport UTC timestamp across timezones', 'PASS');
+  } else {
+    recordTest('TC-BI-06', 'AI Travel BI Engine', `Unexpected order: ${upcomingSorted.matched_trips.map(t => t.trip_id).join(',')}`, 'FAIL');
   }
 } catch (e) {
   recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);

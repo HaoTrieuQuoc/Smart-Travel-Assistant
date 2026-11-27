@@ -411,6 +411,18 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
     arrival_city: updatedFields.arrival_iata ? '' : (updatedFields.arrival_city || existingTrip.arrival_city)
   });
 
+  // Kiểm tra định dạng các trường nhạy cảm nếu có thay đổi (tránh AI trả về giờ bay thiếu ngày hoặc IATA sai)
+  const partialValidation = validateModalTicketInputs({
+    depIata: updatedFields.departure_iata ? normalizedMerged.departure_iata : 'SGN',
+    arrIata: updatedFields.arrival_iata ? normalizedMerged.arrival_iata : 'HAN',
+    depTime: updatedFields.departure_time ? normalizedMerged.departure_time : '2026-01-01 00:00',
+    arrTime: updatedFields.arrival_time ? normalizedMerged.arrival_time : '',
+    email: updatedFields.passenger_email ? normalizedMerged.passenger_email : ''
+  });
+  if (Object.keys(partialValidation).length > 0) {
+    throw new Error(`Dữ liệu cập nhật không hợp lệ: ${Object.values(partialValidation).join(' ')}`);
+  }
+
   // Cập nhật các trường tương ứng theo cột trên Google Sheets từ dữ liệu đã chuẩn hóa
   if (updatedFields.passenger_name) currentRow[3] = normalizedMerged.passenger_name;
   if (updatedFields.department) currentRow[4] = normalizedMerged.department;
@@ -761,6 +773,18 @@ async function handleSlackEvent(event) {
     }
   }
 
+  // Chặn mọi kênh chưa được cấp quyền (ROLES.UNKNOWN)
+  if (channelRole === ROLES.UNKNOWN) {
+    if (userText.length > 0 || event.type === 'app_mention' || Array.isArray(event.files) || event.file) {
+      await postSlackMessage(channelId, {
+        channel: channelId,
+        thread_ts: threadTs,
+        text: buildUnauthorizedMessage('general')
+      });
+    }
+    return;
+  }
+
   // 1. Thu thập tất cả các file đính kèm từ mọi thuộc tính có thể có
   let rawFiles = [];
   if (Array.isArray(event.files)) {
@@ -1105,6 +1129,7 @@ async function handleSlackEvent(event) {
           thread_ts: threadTs,
           message_ts: newMsgTs,
           ticket_data: updatedTicketData,
+          ttl: Math.floor(Date.now() / 1000) + DRAFT_TTL_SECONDS,
           created_at: new Date().toISOString()
         }
       }));
