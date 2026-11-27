@@ -155,6 +155,7 @@ function normalizeTicketData(ticket) {
   const t = { ...(ticket || {}) };
   delete t.is_flight_ticket;
   delete t.rejection_reason;
+  delete t._draft_key;
   const depIata = (t.departure_iata || 'SGN').trim().toUpperCase();
   const arrIata = (t.arrival_iata || 'HAN').trim().toUpperCase();
 
@@ -194,11 +195,68 @@ function normalizeTicketData(ticket) {
 }
 
 const MAX_TRIP_ID_ATTEMPTS = 5;
+const EVENT_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 ngày
+const DRAFT_TTL_SECONDS = 60 * 60 * 24 * 3; // 3 ngày
+
+function computeBookingFingerprint(ticket) {
+  const pnr = String(ticket?.pnr || '').trim().toUpperCase();
+  const flight = String(ticket?.flight_number || '').trim().toUpperCase();
+  const passenger = String(ticket?.passenger_name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
+  const depDate = String(ticket?.departure_time || '').trim().slice(0, 10);
+
+  const rawKey = pnr && pnr !== 'N/A'
+    ? `PNR:${pnr}|FLT:${flight}|PAX:${passenger}`
+    : `FLT:${flight}|PAX:${passenger}|DATE:${depDate}`;
+  return crypto.createHash('sha256').update(rawKey).digest('hex');
+}
+
+async function findDuplicateTrip(normalized) {
+  const targetFp = computeBookingFingerprint(normalized);
+  const items = await scanAll({ TableName: DYNAMODB_TABLE });
+  for (const item of items) {
+    const id = String(item?.trip_id || '');
+    if (!id.startsWith('TRIP-')) continue;
+    if (String(item?.status || '').toUpperCase() === 'CANCELLED') continue;
+    const itemFp = item.booking_fingerprint || computeBookingFingerprint(item);
+    if (itemFp === targetFp) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function validateModalTicketInputs({ depIata, arrIata, depTime, arrTime, email }) {
+  const errors = {};
+  if (!/^[A-Z]{3}$/.test(String(depIata || '').trim().toUpperCase())) {
+    errors.dep_iata_block = 'Mã sân bay đi phải gồm đúng 3 chữ cái IATA (VD: SGN, HAN).';
+  }
+  if (!/^[A-Z]{3}$/.test(String(arrIata || '').trim().toUpperCase())) {
+    errors.arr_iata_block = 'Mã sân bay đến phải gồm đúng 3 chữ cái IATA (VD: HAN, DAD).';
+  }
+  const depStr = String(depTime || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(depStr) || Number.isNaN(new Date(depStr.replace(' ', 'T') + ':00Z').getTime())) {
+    errors.dep_time_block = 'Giờ cất cánh phải theo định dạng YYYY-MM-DD HH:mm (VD: 2026-12-05 08:30).';
+  }
+  const arrStr = String(arrTime || '').trim();
+  if (arrStr && (!/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(arrStr) || Number.isNaN(new Date(arrStr.replace(' ', 'T') + ':00Z').getTime()))) {
+    errors.arr_time_block = 'Giờ hạ cánh phải theo định dạng YYYY-MM-DD HH:mm (VD: 2026-12-05 10:40).';
+  }
+  const emailStr = String(email || '').trim();
+  if (emailStr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+    errors.email_block = 'Email không đúng định dạng (VD: ten@company.com).';
+  }
+  return errors;
+}
 
 async function reserveTripRecord(normalized) {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
+  const bookingFingerprint = computeBookingFingerprint(normalized);
 
   for (let attempt = 1; ; attempt++) {
     const seq = crypto.randomInt(100000, 1000000);
@@ -213,6 +271,7 @@ async function reserveTripRecord(normalized) {
           trip_id: tripId,
           pr_number: prNumber,
           status: 'APPROVED',
+          booking_fingerprint: bookingFingerprint,
           passenger_name: normalized.passenger_name,
           department: normalized.department,
           passenger_email: normalized.passenger_email,
@@ -247,6 +306,14 @@ async function reserveTripRecord(normalized) {
 // Save Trip Record to Google Sheets and DynamoDB
 async function saveTripRecord(tripData) {
   const normalized = normalizeTicketData(tripData);
+  const duplicate = await findDuplicateTrip(normalized);
+  if (duplicate) {
+    const dupErr = new Error(`Chuyến bay này đã được lưu trước đó (Mã: ${duplicate.trip_id}, PNR: ${duplicate.pnr}, Chuyến: ${duplicate.flight_number}, Hành khách: ${duplicate.passenger_name}).`);
+    dupErr.code = 'DUPLICATE_BOOKING';
+    dupErr.existingTripId = duplicate.trip_id;
+    throw dupErr;
+  }
+
   const accessToken = await getGoogleAccessToken();
   // 1. Giữ chỗ mã chuyến trong DynamoDB: mã trùng bị từ chối và sinh lại, không ghi đè chuyến cũ
   const { tripId, prNumber } = await reserveTripRecord(normalized);
@@ -329,41 +396,49 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
   while (currentRow.length < 23) {
     currentRow.push('');
   }
+  const previousRow = [...currentRow];
 
-  // Cập nhật các trường tương ứng theo cột
-  if (updatedFields.passenger_name) currentRow[3] = formatPassengerName(updatedFields.passenger_name);
-  if (updatedFields.department) currentRow[4] = toTitleCase(updatedFields.department);
-  if (updatedFields.passenger_email) currentRow[5] = updatedFields.passenger_email.trim().toLowerCase();
-  if (updatedFields.airline) currentRow[7] = toTitleCase(updatedFields.airline);
-  if (updatedFields.flight_number) currentRow[8] = updatedFields.flight_number.trim().toUpperCase();
+  // Đọc bản ghi hiện tại từ DynamoDB trước khi ghi để chuẩn hóa đồng nhất giữa Sheets và DynamoDB
+  const existingTripRes = await docClient.send(new GetCommand({
+    TableName: DYNAMODB_TABLE,
+    Key: { trip_id: tripId }
+  }));
+  const existingTrip = existingTripRes.Item || { trip_id: tripId };
+  const mergedRaw = { ...existingTrip, ...updatedFields };
+  const normalizedMerged = normalizeTicketData({
+    ...mergedRaw,
+    departure_city: updatedFields.departure_iata ? '' : (updatedFields.departure_city || existingTrip.departure_city),
+    arrival_city: updatedFields.arrival_iata ? '' : (updatedFields.arrival_city || existingTrip.arrival_city)
+  });
+
+  // Cập nhật các trường tương ứng theo cột trên Google Sheets từ dữ liệu đã chuẩn hóa
+  if (updatedFields.passenger_name) currentRow[3] = normalizedMerged.passenger_name;
+  if (updatedFields.department) currentRow[4] = normalizedMerged.department;
+  if (updatedFields.passenger_email) currentRow[5] = normalizedMerged.passenger_email;
+  if (updatedFields.airline) currentRow[7] = normalizedMerged.airline;
+  if (updatedFields.flight_number) currentRow[8] = normalizedMerged.flight_number;
   if (updatedFields.departure_city || updatedFields.departure_iata) {
-    const depIata = (updatedFields.departure_iata || currentRow[10] || '').trim().toUpperCase();
-    currentRow[9] = normalizeCity(updatedFields.departure_city || currentRow[9], depIata);
-    currentRow[10] = depIata;
+    currentRow[9] = normalizedMerged.departure_city;
+    currentRow[10] = normalizedMerged.departure_iata;
   }
   if (updatedFields.arrival_city || updatedFields.arrival_iata) {
-    const arrIata = (updatedFields.arrival_iata || currentRow[12] || '').trim().toUpperCase();
-    currentRow[11] = normalizeCity(updatedFields.arrival_city || currentRow[11], arrIata);
-    currentRow[12] = arrIata;
+    currentRow[11] = normalizedMerged.arrival_city;
+    currentRow[12] = normalizedMerged.arrival_iata;
   }
-  if (updatedFields.departure_time) currentRow[13] = updatedFields.departure_time.trim();
-  if (updatedFields.arrival_time) currentRow[14] = updatedFields.arrival_time.trim();
-  if (updatedFields.pnr) currentRow[15] = updatedFields.pnr.trim().toUpperCase();
-  if (updatedFields.ticket_class) currentRow[16] = toTitleCase(updatedFields.ticket_class);
-  if (updatedFields.ticket_price !== undefined) {
-    const rawP = String(updatedFields.ticket_price).trim();
-    const cleanP = rawP.replace(/[^0-9]/g, '');
-    currentRow[17] = cleanP && cleanP !== '0' ? cleanP : (rawP && rawP !== '0' ? rawP : 'Chưa rõ');
-  }
-  if (updatedFields.payment_method) currentRow[18] = toTitleCase(updatedFields.payment_method);
-  if (updatedFields.purpose) currentRow[19] = toTitleCase(updatedFields.purpose);
+  if (updatedFields.departure_time) currentRow[13] = normalizedMerged.departure_time;
+  if (updatedFields.arrival_time) currentRow[14] = normalizedMerged.arrival_time;
+  if (updatedFields.pnr) currentRow[15] = normalizedMerged.pnr;
+  if (updatedFields.ticket_class) currentRow[16] = normalizedMerged.ticket_class;
+  if (updatedFields.ticket_price !== undefined) currentRow[17] = normalizedMerged.ticket_price;
+  if (updatedFields.payment_method) currentRow[18] = normalizedMerged.payment_method;
+  if (updatedFields.purpose) currentRow[19] = normalizedMerged.purpose;
 
   currentRow[21] = 'VALID';
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
   currentRow[22] = `[AI UPDATE ${nowIso}] ${explanation || 'Đã sửa qua Slack'}`;
 
-  // Ghi đè vào dòng trong Google Sheets
-  await makeRequest(
+  // 1. Ghi đè vào dòng trong Google Sheets
+  const updateSheetRes = await makeRequest(
     `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A${rowIndex}:W${rowIndex}?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
@@ -374,18 +449,16 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
     },
     { values: [currentRow] }
   );
+  if (updateSheetRes?.status >= 300) {
+    throw new Error(`Google Sheets trả về lỗi ${updateSheetRes.status}`);
+  }
 
-  // 2. Cập nhật DynamoDB
-  const existingTripRes = await docClient.send(new GetCommand({
-    TableName: DYNAMODB_TABLE,
-    Key: { trip_id: tripId }
-  }));
-  const existingTrip = existingTripRes.Item || { trip_id: tripId };
-
+  // 2. Cập nhật DynamoDB (nếu lỗi thì hoàn tác dòng Google Sheets về trạng thái trước đó)
   const mergedTrip = {
     ...existingTrip,
-    ...updatedFields,
+    ...normalizedMerged,
     trip_id: tripId,
+    booking_fingerprint: computeBookingFingerprint(normalizedMerged),
     audit_status: 'VALID',
     last_synced_at: new Date().toISOString()
   };
@@ -393,12 +466,108 @@ async function updateGoogleSheetAndDynamoTrip(tripId, updatedFields, explanation
   const hashString = `${tripId}|${mergedTrip.passenger_name || ''}|${mergedTrip.flight_number || ''}|${mergedTrip.departure_time || ''}`;
   mergedTrip.row_hash = crypto.createHash('sha256').update(hashString).digest('hex');
 
-  await docClient.send(new PutCommand({
-    TableName: DYNAMODB_TABLE,
-    Item: mergedTrip
-  }));
+  try {
+    await docClient.send(new PutCommand({
+      TableName: DYNAMODB_TABLE,
+      Item: mergedTrip
+    }));
+  } catch (ddbErr) {
+    await makeRequest(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A${rowIndex}:W${rowIndex}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      },
+      { values: [previousRow] }
+    ).catch(() => {});
+    throw ddbErr;
+  }
 
-  return { tripId, updatedFields, currentRow };
+  return { tripId, updatedFields, currentRow, mergedTrip };
+}
+
+// Hủy chuyến công tác đã lưu trên Google Sheets & DynamoDB (chuyển Status -> CANCELLED)
+async function cancelSavedTrip(tripId, reason = 'Hủy theo yêu cầu trên Slack') {
+  const existingRes = await docClient.send(new GetCommand({
+    TableName: DYNAMODB_TABLE,
+    Key: { trip_id: tripId }
+  }));
+  if (!existingRes.Item) {
+    throw new Error(`Không tìm thấy mã chuyến đi ${tripId}`);
+  }
+
+  const accessToken = await getGoogleAccessToken();
+  const sheetRes = await makeRequest(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A:W`,
+    {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    }
+  );
+  const rows = sheetRes.data?.values || [];
+  let rowIndex = -1;
+  let currentRow = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] && rows[i][0].toString().trim().toUpperCase() === tripId.toUpperCase()) {
+      rowIndex = i + 1;
+      currentRow = [...rows[i]];
+      break;
+    }
+  }
+
+  let previousRow = null;
+  if (rowIndex !== -1 && currentRow) {
+    while (currentRow.length < 23) currentRow.push('');
+    previousRow = [...currentRow];
+    currentRow[2] = 'CANCELLED';
+    const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    currentRow[22] = `[CANCELLED ${nowIso}] ${reason}`;
+
+    const putRes = await makeRequest(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A${rowIndex}:W${rowIndex}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      },
+      { values: [currentRow] }
+    );
+    if (putRes?.status >= 300) {
+      throw new Error(`Google Sheets trả về lỗi ${putRes.status}`);
+    }
+  }
+
+  const updatedItem = {
+    ...existingRes.Item,
+    status: 'CANCELLED',
+    cancelled_reason: reason,
+    cancelled_at: new Date().toISOString(),
+    last_synced_at: new Date().toISOString()
+  };
+  try {
+    await docClient.send(new PutCommand({ TableName: DYNAMODB_TABLE, Item: updatedItem }));
+  } catch (ddbErr) {
+    if (previousRow && rowIndex !== -1) {
+      await makeRequest(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A${rowIndex}:W${rowIndex}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        },
+        { values: [previousRow] }
+      ).catch(() => {});
+    }
+    throw ddbErr;
+  }
+  return updatedItem;
 }
 
 // Xây dựng giao diện thẻ xem trước kết quả bóc tách vé máy bay (Ticket Preview Card)
@@ -571,6 +740,7 @@ async function handleSlackEvent(event) {
           trip_id: `EVENT#${channelId}#${event.ts}`,
           channel_id: channelId,
           event_type: event.type,
+          ttl: Math.floor(Date.now() / 1000) + EVENT_TTL_SECONDS,
           created_at: new Date().toISOString()
         },
         ConditionExpression: 'attribute_not_exists(trip_id)'
@@ -616,102 +786,129 @@ async function handleSlackEvent(event) {
   const imageFiles = rawFiles.filter(isImageFile);
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 1: Có ảnh đính kèm -> Xác nhận đã nhận, phân tích & từ chối nếu không phải vé máy bay
+  // TRƯỜNG HỢP 1: Có ảnh đính kèm -> Xác nhận đã nhận, phân tích từng ảnh & từ chối nếu không phải vé máy bay
   // -------------------------------------------------------------
   if (imageFiles.length > 0) {
-    let file = imageFiles[0];
+    const MAX_IMAGES = 5;
+    const filesToProcess = imageFiles.slice(0, MAX_IMAGES);
+    const ackText = imageFiles.length === 1
+      ? "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin..."
+      : `Đã nhận được ${imageFiles.length} ảnh. Đang tiến hành kiểm tra và phân tích${imageFiles.length > MAX_IMAGES ? ` (${MAX_IMAGES} ảnh đầu tiên)` : ''}...`;
 
     // Phản hồi tức thì xác nhận đã nhận ảnh và đang phân tích (không dùng icon AI)
     await postSlackMessage(channelId, {
       channel: channelId,
       thread_ts: threadTs,
-      text: "Đã nhận được ảnh. Đang tiến hành kiểm tra và phân tích thông tin..."
+      text: ackText
     });
 
-    try {
-      if (!file.url_private_download && !file.url_private && file.id) {
-        const fullFileInfo = await getSlackFileInfo(file.id);
-        if (fullFileInfo) file = fullFileInfo;
-      }
+    for (let idx = 0; idx < filesToProcess.length; idx++) {
+      let file = filesToProcess[idx];
+      const fileLabel = filesToProcess.length > 1 ? ` (Ảnh ${idx + 1}/${filesToProcess.length}${file.name ? `: ${file.name}` : ''})` : '';
 
-      const downloadUrl = file.url_private_download || file.url_private;
-      if (!downloadUrl) {
-        throw new Error('Không lấy được liên kết tải ảnh từ Slack');
-      }
+      try {
+        if (!file.url_private_download && !file.url_private && file.id) {
+          const fullFileInfo = await getSlackFileInfo(file.id);
+          if (fullFileInfo) file = fullFileInfo;
+        }
 
-      const base64Data = await downloadSlackFile(downloadUrl);
-      const rawTicketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+        const downloadUrl = file.url_private_download || file.url_private;
+        if (!downloadUrl) {
+          throw new Error('Không lấy được liên kết tải ảnh từ Slack');
+        }
 
-      // Kiểm tra phân loại: chỉ tiếp tục nếu ảnh thực sự là vé máy bay / boarding pass
-      const validation = validateFlightTicketExtraction(rawTicketInfo);
-      if (!validation.valid) {
+        const base64Data = await downloadSlackFile(downloadUrl);
+        const rawTicketInfo = await extractTicketFromBase64(base64Data, file.mimetype || 'image/png');
+
+        // Kiểm tra phân loại: chỉ tiếp tục nếu ảnh thực sự là vé máy bay / boarding pass
+        const validation = validateFlightTicketExtraction(rawTicketInfo);
+        if (!validation.valid) {
+          await postSlackMessage(channelId, {
+            channel: channelId,
+            thread_ts: threadTs,
+            text: `Từ chối xử lý ảnh${fileLabel}: ${validation.reason}\nVui lòng gửi đúng ảnh vé máy bay, e-ticket hoặc thẻ lên tàu bay (boarding pass) rõ nét để hệ thống trích xuất thông tin.`
+          });
+          continue;
+        }
+
+        // Lấy thông tin tài khoản người dùng Slack đã gửi ảnh vé
+        const senderUserId = event.user || file.user;
+        if (senderUserId) {
+          rawTicketInfo.slack_user_id = senderUserId;
+          try {
+            const slackUser = await getSlackUserInfo(senderUserId);
+            if (slackUser) {
+              rawTicketInfo.slack_username = slackUser.username;
+              if (slackUser.email) {
+                rawTicketInfo.passenger_email = slackUser.email;
+              }
+            } else {
+              rawTicketInfo.slack_username = `@${senderUserId}`;
+            }
+          } catch (e) {
+            console.error('Error getting slack user info:', e);
+            rawTicketInfo.slack_username = `@${senderUserId}`;
+          }
+        }
+
+        // Chuẩn hóa toàn bộ dữ liệu theo quy chuẩn đồng bộ
+        const ticketInfo = normalizeTicketData(rawTicketInfo);
+        const draftScope = filesToProcess.length > 1 ? `${threadTs}#${idx + 1}` : threadTs;
+        const draftKey = buildDraftKey(channelId, draftScope);
+        const cardTicketPayload = filesToProcess.length > 1 ? { ...ticketInfo, _draft_key: draftKey } : ticketInfo;
+
+        // Gửi thẻ xem trước
+        const card = buildTicketPreviewCard(channelId, threadTs, cardTicketPayload, false, true);
+        if (filesToProcess.length > 1) {
+          card.blocks = card.blocks.map(b => {
+            if (b.type === 'actions' && Array.isArray(b.elements)) {
+              return {
+                ...b,
+                elements: b.elements.map(el => el.action_id === 'cancel_ticket'
+                  ? { ...el, value: JSON.stringify({ _draft_key: draftKey }) }
+                  : { ...el, value: JSON.stringify(cardTicketPayload) })
+              };
+            }
+            return b;
+          });
+        }
+        const postRes = await postSlackMessage(channelId, card);
+        const postedMsgTs = postRes?.data?.ts || postRes?.ts;
+
+        // Lưu bản nháp (Draft) vào DynamoDB theo khóa riêng của thread/ảnh kèm TTL 3 ngày
+        await docClient.send(new PutCommand({
+          TableName: DYNAMODB_TABLE,
+          Item: {
+            trip_id: draftKey,
+            channel_id: channelId,
+            thread_ts: threadTs,
+            message_ts: postedMsgTs,
+            ticket_data: ticketInfo,
+            ttl: Math.floor(Date.now() / 1000) + DRAFT_TTL_SECONDS,
+            created_at: new Date().toISOString()
+          }
+        }));
+      } catch (err) {
+        console.error('OCR Error:', err);
         await postSlackMessage(channelId, {
           channel: channelId,
           thread_ts: threadTs,
-          text: `Từ chối xử lý ảnh: ${validation.reason}\nVui lòng gửi đúng ảnh vé máy bay, e-ticket hoặc thẻ lên tàu bay (boarding pass) rõ nét để hệ thống trích xuất thông tin.`
+          text: `Không thể đọc được ảnh vé này${fileLabel}: ${err.message}. Vui lòng gửi lại ảnh rõ nét hơn.`
         });
-        return;
       }
-
-      // Lấy thông tin tài khoản người dùng Slack đã gửi ảnh vé
-      const senderUserId = event.user || file.user;
-      if (senderUserId) {
-        rawTicketInfo.slack_user_id = senderUserId;
-        try {
-          const slackUser = await getSlackUserInfo(senderUserId);
-          if (slackUser) {
-            rawTicketInfo.slack_username = slackUser.username;
-            if (slackUser.email) {
-              rawTicketInfo.passenger_email = slackUser.email;
-            }
-          } else {
-            rawTicketInfo.slack_username = `@${senderUserId}`;
-          }
-        } catch (e) {
-          console.error('Error getting slack user info:', e);
-          rawTicketInfo.slack_username = `@${senderUserId}`;
-        }
-      }
-
-      // Chuẩn hóa toàn bộ dữ liệu theo quy chuẩn đồng bộ
-      const ticketInfo = normalizeTicketData(rawTicketInfo);
-
-      // Gửi thẻ xem trước
-      const card = buildTicketPreviewCard(channelId, threadTs, ticketInfo, false, true);
-      const postRes = await postSlackMessage(channelId, card);
-      const postedMsgTs = postRes?.data?.ts || postRes?.ts;
-
-      // Lưu bản nháp (Draft) vào DynamoDB theo khóa riêng của thread để tránh ghi đè khi nhiều người gửi vé cùng lúc
-      await docClient.send(new PutCommand({
-        TableName: DYNAMODB_TABLE,
-        Item: {
-          trip_id: buildDraftKey(channelId, threadTs),
-          channel_id: channelId,
-          thread_ts: threadTs,
-          message_ts: postedMsgTs,
-          ticket_data: ticketInfo,
-          created_at: new Date().toISOString()
-        }
-      }));
-    } catch (err) {
-      console.error('OCR Error:', err);
-      await postSlackMessage(channelId, {
-        channel: channelId,
-        thread_ts: threadTs,
-        text: `Không thể đọc được ảnh vé này: ${err.message}. Vui lòng gửi lại ảnh rõ nét hơn.`
-      });
     }
     return;
   }
 
   // -------------------------------------------------------------
-  // TRƯỜNG HỢP 2: Người dùng nhắn tin chỉnh sửa chuyến đi ĐÃ LƯU (Google Sheets & DynamoDB)
-  // Nhận diện qua mã TRIP-YYYYMM-XXX hoặc từ khóa chỉnh sửa
+  // TRƯỜNG HỢP 2: Người dùng nhắn tin chỉnh sửa hoặc hủy chuyến đi ĐÃ LƯU (Google Sheets & DynamoDB)
+  // Nhận diện qua mã TRIP-YYYYMM-XXX và từ khóa chỉnh sửa/hủy
   // -------------------------------------------------------------
   const tripIdMatch = userText.match(/TRIP-\d{6}-\d{3,6}/i);
+  const isCancelSavedAction = /(hủy|huỷ|cancel|hoàn vé)/i.test(userText);
   const isEditAction = /(sửa|đổi|chỉnh|cập nhật|update|thay đổi)/i.test(userText);
 
-  if (tripIdMatch && isEditAction) {
+  if (tripIdMatch && (isEditAction || isCancelSavedAction)) {
     if (channelRole !== ROLES.ADMIN_HR) {
       await postSlackMessage(channelId, {
         channel: channelId,
@@ -728,7 +925,24 @@ async function handleSlackEvent(event) {
         Key: { trip_id: tripId }
       }));
 
-      if (existingTripRes.Item) {
+      if (!existingTripRes.Item) {
+        await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `Không tìm thấy mã chuyến đi \`${tripId}\` trong hệ thống. Vui lòng kiểm tra lại mã TRIP.`
+        });
+        return;
+      }
+
+      if (isCancelSavedAction && !isEditAction) {
+        await cancelSavedTrip(tripId, userText);
+        await postSlackMessage(channelId, {
+          channel: channelId,
+          thread_ts: threadTs,
+          text: `Đã hủy chuyến công tác \`${tripId}\` (trạng thái chuyển sang CANCELLED trên hệ thống và Google Sheets tab *${TAB_NAME}*).`
+        });
+        return;
+      }
         await postSlackMessage(channelId, {
           channel: channelId,
           thread_ts: threadTs,
@@ -782,7 +996,6 @@ async function handleSlackEvent(event) {
           });
           return;
         }
-      }
     } catch (err) {
       console.error('Edit saved trip error:', err);
       await postSlackMessage(channelId, {
@@ -971,6 +1184,11 @@ async function handleSlackEvent(event) {
     try {
       const prData = await parsePurchaseRequestChat(userText);
       if (prData.is_pr_request) {
+        const prPayload = {
+          ...prData,
+          requester_id: event.user || '',
+          channel_id: channelId
+        };
         await postSlackMessage(channelId, {
           channel: channelId,
           thread_ts: threadTs,
@@ -1000,7 +1218,7 @@ async function handleSlackEvent(event) {
                   text: { type: "plain_text", text: "Gửi phê duyệt", emoji: false },
                   style: "primary",
                   action_id: "submit_pr_approval",
-                  value: JSON.stringify(prData)
+                  value: JSON.stringify(prPayload)
                 }
               ]
             }
@@ -1217,6 +1435,24 @@ exports.handler = async (event, context) => {
 
           const depIata = (values.dep_iata_block?.dep_iata_input?.value || '').trim().toUpperCase();
           const arrIata = (values.arr_iata_block?.arr_iata_input?.value || '').trim().toUpperCase();
+          const depTimeVal = (values.dep_time_block?.dep_time_input?.value || '').trim();
+          const arrTimeVal = (values.arr_time_block?.arr_time_input?.value || '').trim();
+          const emailVal = (values.email_block?.email_input?.value || '').trim();
+
+          const inputErrors = validateModalTicketInputs({
+            depIata,
+            arrIata,
+            depTime: depTimeVal,
+            arrTime: arrTimeVal,
+            email: emailVal
+          });
+          if (Object.keys(inputErrors).length > 0) {
+            return {
+              statusCode: 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ response_action: 'errors', errors: inputErrors })
+            };
+          }
 
           let draftOwner = null;
           let existingDraftRecord = null;
@@ -1292,6 +1528,7 @@ exports.handler = async (event, context) => {
                 thread_ts: threadTs,
                 message_ts: newMsgTs,
                 ticket_data: updatedTicket,
+                ttl: Math.floor(Date.now() / 1000) + DRAFT_TTL_SECONDS,
                 created_at: new Date().toISOString()
               }
             }));
@@ -1336,6 +1573,25 @@ exports.handler = async (event, context) => {
           const pnr = (values.pnr_block?.pnr_input?.value || 'N/A').trim().toUpperCase();
           const price = (values.cost_block?.cost_input?.value || '0').replace(/[^0-9]/g, '');
           const purpose = values.purpose_block?.purpose_input?.value || 'Công tác nội bộ';
+
+          const manualErrors = validateModalTicketInputs({
+            depIata,
+            arrIata,
+            depTime,
+            arrTime: '',
+            email: passengerEmail
+          });
+          if (manualErrors.dep_time_block) {
+            manualErrors.time_block = manualErrors.dep_time_block;
+            delete manualErrors.dep_time_block;
+          }
+          if (Object.keys(manualErrors).length > 0) {
+            return {
+              statusCode: 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ response_action: 'errors', errors: manualErrors })
+            };
+          }
 
           let flightNum = flightRaw;
           let airline = 'Vietnam Airlines';
@@ -1395,14 +1651,25 @@ exports.handler = async (event, context) => {
         const action = payload.actions?.[0];
         const channelId = payload.channel?.id || payload.container?.channel_id;
         const actionThreadTs = payload.message?.thread_ts || payload.message?.ts;
+        let parsedActionValue = null;
+        if (action?.value) {
+          try { parsedActionValue = JSON.parse(action.value); } catch {}
+        }
+        const resolveDraftForAction = async () => {
+          if (parsedActionValue?._draft_key) {
+            const explicitRes = await docClient.send(new GetCommand({
+              TableName: DYNAMODB_TABLE,
+              Key: { trip_id: parsedActionValue._draft_key }
+            }));
+            if (explicitRes.Item) return { key: parsedActionValue._draft_key, item: explicitRes.Item };
+          }
+          return getDraftRecord(channelId, actionThreadTs);
+        };
 
         // B0. Chặn người không có quyền thao tác trên bản nháp
         if (['open_edit_ticket_modal', 'confirm_save_ticket', 'cancel_ticket'].includes(action?.action_id)) {
-          const draftRecord = await getDraftRecord(channelId, actionThreadTs);
-          let ticket = draftRecord?.item?.ticket_data;
-          if (!ticket && action.value) {
-            try { ticket = JSON.parse(action.value); } catch {}
-          }
+          const draftRecord = await resolveDraftForAction();
+          let ticket = draftRecord?.item?.ticket_data || parsedActionValue;
           if (!canActOnDraft(channelId, payload.user?.id, ticket)) {
             if (payload.response_url) {
               await makeRequest(payload.response_url, {
@@ -1632,7 +1899,7 @@ exports.handler = async (event, context) => {
 
           if (channelId) {
             try {
-              draftRecord = await getDraftRecord(channelId, actionThreadTs);
+              draftRecord = await resolveDraftForAction();
               if (draftRecord?.item?.ticket_data) {
                 ticketData = draftRecord.item.ticket_data;
               }
@@ -1673,11 +1940,29 @@ exports.handler = async (event, context) => {
               ticketData.ticket_price = 'Chưa rõ';
             }
 
-            const { tripId, normalized } = await saveTripRecord(ticketData);
+            let savedResult;
+            try {
+              savedResult = await saveTripRecord(ticketData);
+            } catch (saveErr) {
+              if (payload.response_url) {
+                await makeRequest(payload.response_url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                }, {
+                  response_type: 'ephemeral',
+                  replace_original: false,
+                  text: saveErr.code === 'DUPLICATE_BOOKING'
+                    ? `Từ chối lưu trùng lặp: ${saveErr.message}`
+                    : `Không thể lưu chuyến bay: ${saveErr.message}`
+                });
+              }
+              return { statusCode: 200, body: '' };
+            }
+            const { tripId, normalized } = savedResult;
 
             if (channelId) {
               try {
-                const currentRecord = draftRecord || await getDraftRecord(channelId, actionThreadTs);
+                const currentRecord = draftRecord || await resolveDraftForAction();
                 const draftMsgTs = currentRecord?.item?.message_ts;
                 if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
                   const disabledCard = buildTicketPreviewCard(channelId, null, currentRecord?.item?.ticket_data || ticketData, false, false);
@@ -1708,7 +1993,7 @@ exports.handler = async (event, context) => {
         } else if (action?.action_id === 'cancel_ticket') {
           if (channelId) {
             try {
-              const draftRecord = await getDraftRecord(channelId, actionThreadTs);
+              const draftRecord = await resolveDraftForAction();
               const draftMsgTs = draftRecord?.item?.message_ts;
               if (draftMsgTs && draftMsgTs !== payload.message?.ts) {
                 const disabledCard = buildTicketPreviewCard(channelId, null, draftRecord?.item?.ticket_data || {}, false, false);
@@ -1731,12 +2016,108 @@ exports.handler = async (event, context) => {
             });
           }
         } else if (action?.action_id === 'submit_pr_approval') {
+          let prData = {};
+          try { prData = JSON.parse(action.value || '{}'); } catch {}
+          const now = new Date();
+          const prId = `PR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${crypto.randomInt(100000, 1000000)}`;
+          const requesterId = prData.requester_id || payload.user?.id || '';
+          const requesterName = payload.user?.username ? `@${payload.user.username}` : (payload.user?.name ? `@${payload.user.name}` : '@user');
+
+          const prItem = {
+            trip_id: prId,
+            record_type: 'PURCHASE_REQUEST',
+            status: 'PENDING_APPROVAL',
+            destination: prData.destination || 'Chưa rõ',
+            departure_date: prData.departure_date || 'Chưa định ngày',
+            estimated_cost: Number(prData.estimated_cost || 0),
+            purpose: prData.purpose || 'Công tác',
+            requester_id: requesterId,
+            requester_username: requesterName,
+            source_channel_id: channelId || prData.channel_id || '',
+            created_at: now.toISOString()
+          };
+          await docClient.send(new PutCommand({ TableName: DYNAMODB_TABLE, Item: prItem }));
+
+          const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C0CGLFPNW7R';
+          await postSlackMessage(adminChannel, {
+            channel: adminChannel,
+            blocks: [
+              {
+                type: "header",
+                text: { type: "plain_text", text: `ĐỀ XUẤT CÔNG TÁC CHỜ DUYỆT (${prId})`, emoji: false }
+              },
+              {
+                type: "section",
+                fields: [
+                  { type: "mrkdwn", text: `*Mã PR:*\n\`${prId}\`` },
+                  { type: "mrkdwn", text: `*Người đề xuất:*\n${requesterId ? `<@${requesterId}>` : requesterName}` },
+                  { type: "mrkdwn", text: `*Điểm đến:*\n${prItem.destination}` },
+                  { type: "mrkdwn", text: `*Ngày đi dự kiến:*\n${prItem.departure_date}` },
+                  { type: "mrkdwn", text: `*Ngân sách dự trù:*\n${prItem.estimated_cost.toLocaleString('vi-VN')} VND` },
+                  { type: "mrkdwn", text: `*Mục đích:*\n${prItem.purpose}` }
+                ]
+              },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "Phê duyệt PR", emoji: false },
+                    style: "primary",
+                    action_id: "approve_pr",
+                    value: prId
+                  },
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "Từ chối PR", emoji: false },
+                    style: "danger",
+                    action_id: "reject_pr",
+                    value: prId
+                  }
+                ]
+              }
+            ]
+          });
+
           if (payload.response_url) {
             await makeRequest(payload.response_url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
             }, {
-              text: "Yêu cầu Purchase Request (PR) đã được chuyển tiếp để phê duyệt."
+              text: `Đã tạo và chuyển Purchase Request \`${prId}\` tới bộ phận HR để phê duyệt.`
+            });
+          }
+        } else if (action?.action_id === 'approve_pr' || action?.action_id === 'reject_pr') {
+          if (getChannelRole(channelId) !== ROLES.ADMIN_HR) {
+            if (payload.response_url) {
+              await makeRequest(payload.response_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              }, { response_type: 'ephemeral', replace_original: false, text: buildUnauthorizedMessage('general') });
+            }
+            return { statusCode: 200, body: '' };
+          }
+          const prId = String(action.value || '').trim();
+          const nextStatus = action.action_id === 'approve_pr' ? 'APPROVED_PR' : 'REJECTED_PR';
+          const prRes = await docClient.send(new GetCommand({ TableName: DYNAMODB_TABLE, Key: { trip_id: prId } }));
+          if (prRes.Item) {
+            await docClient.send(new PutCommand({
+              TableName: DYNAMODB_TABLE,
+              Item: {
+                ...prRes.Item,
+                status: nextStatus,
+                reviewed_by: payload.user?.id || '',
+                reviewed_at: new Date().toISOString()
+              }
+            }));
+          }
+          if (payload.response_url) {
+            const label = nextStatus === 'APPROVED_PR' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI';
+            await makeRequest(payload.response_url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            }, {
+              text: `Purchase Request \`${prId}\`: ${label} bởi <@${payload.user?.id || 'HR'}>.`
             });
           }
         }
@@ -1760,6 +2141,10 @@ module.exports = {
   buildTicketPreviewCard,
   saveTripRecord,
   updateGoogleSheetAndDynamoTrip,
+  cancelSavedTrip,
+  computeBookingFingerprint,
+  findDuplicateTrip,
+  validateModalTicketInputs,
   buildDraftKey,
   getDraftRecord,
   handleSlackEvent

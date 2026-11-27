@@ -70,84 +70,108 @@ exports.handler = async (event, context) => {
   let remindersSent = 0;
 
   for (const booking of items) {
+    const tripId = String(booking?.trip_id || '');
+    if (!tripId || tripId.startsWith('DRAFT#') || tripId.startsWith('EVENT#') || tripId.startsWith('PR-')) continue;
+    if (booking.status !== 'APPROVED') continue;
+
     const depTime = parseDepartureTime(booking.departure_time, booking.departure_iata);
     const isWithin24h = depTime >= now && depTime <= next24h;
 
     // Nếu thời gian cất cánh trong vòng 24h
     if (isWithin24h) {
-      console.log(`Xử lý gửi reminder cho ${booking.passenger_name} (${booking.flight_number})...`);
+      try {
+        console.log(`Xử lý gửi reminder cho ${booking.passenger_name} (${booking.flight_number})...`);
 
-      const aiGuide = await generateAITravelGuide(booking);
-
-      // Gửi thông báo đến Admin Channel (không chứa icon/emoji)
-      await postSlackMessage(ADMIN_CHANNEL_ID, {
-        blocks: [
-          {
-            type: "header",
-            text: { type: "plain_text", text: `NHẮC LỊCH BAY 24H: ${booking.passenger_name.toUpperCase()}`, emoji: false }
-          },
-          {
-            type: "section",
-            fields: [
-              { type: "mrkdwn", text: `*Chuyến bay:*\n${booking.flight_number} (${booking.airline})` },
-              { type: "mrkdwn", text: `*Chặng:*\n${booking.departure_iata} ➔ ${booking.arrival_iata}` },
-              { type: "mrkdwn", text: `*Giờ bay:*\n${booking.departure_time}` },
-              { type: "mrkdwn", text: `*Hành khách:*\n${booking.passenger_name}` }
-            ]
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: `*Hướng dẫn & Chuẩn bị hành lý:*\n\n${aiGuide}` }
-          }
-        ]
-      });
-
-      // 1. Cập nhật DynamoDB
-      await docClient.send(new UpdateCommand({
-        TableName: DYNAMODB_TABLE,
-        Key: { trip_id: booking.trip_id },
-        UpdateExpression: 'SET reminder_sent = :sent, last_synced_at = :now',
-        ExpressionAttributeValues: {
-          ':sent': 'SENT',
-          ':now': new Date().toISOString()
-        }
-      }));
-
-      // 2. Cập nhật Google Sheets Column U (Reminder_24h)
-      if (SPREADSHEET_ID && booking.trip_id) {
+        let aiGuide;
         try {
-          const accessToken = await getGoogleAccessToken();
-          const sheetRes = await makeRequest(
-            `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A:U`,
-            {
-              method: 'GET',
-              headers: { 'Authorization': `Bearer ${accessToken}` }
-            }
-          );
-          const rows = sheetRes.data?.values || [];
-          for (let i = 0; i < rows.length; i++) {
-            if (rows[i][0] && rows[i][0].toString().trim().toUpperCase() === booking.trip_id.toUpperCase()) {
-              const rowIndex = i + 1;
-              await makeRequest(
-                `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!U${rowIndex}?valueInputOption=USER_ENTERED`,
-                {
-                  method: 'PUT',
-                  headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                  }
-                },
-                { values: [['SENT']] }
-              );
-              break;
-            }
-          }
-        } catch (sheetErr) {
-          console.error(`Lỗi cập nhật Google Sheet cho chuyến ${booking.trip_id}:`, sheetErr);
+          aiGuide = await generateAITravelGuide(booking);
+        } catch (aiErr) {
+          console.error(`Lỗi sinh hướng dẫn AI cho ${tripId}, dùng nội dung mặc định:`, aiErr.message);
+          aiGuide = '1. Chuẩn bị CCCD/Hộ chiếu, vé điện tử và thiết bị làm việc.\n2. Có mặt tại sân bay trước giờ khởi hành ít nhất 2 tiếng (nội địa) hoặc 3 tiếng (quốc tế).';
         }
-      }
 
-      remindersSent++;
+        const passengerMention = booking.slack_user_id ? `<@${booking.slack_user_id}>` : booking.passenger_name;
+        const reminderPayload = {
+          blocks: [
+            {
+              type: "header",
+              text: { type: "plain_text", text: `NHẮC LỊCH BAY 24H: ${String(booking.passenger_name || '').toUpperCase()}`, emoji: false }
+            },
+            {
+              type: "section",
+              fields: [
+                { type: "mrkdwn", text: `*Chuyến bay:*\n${booking.flight_number} (${booking.airline})` },
+                { type: "mrkdwn", text: `*Chặng:*\n${booking.departure_iata} ➔ ${booking.arrival_iata}` },
+                { type: "mrkdwn", text: `*Giờ bay:*\n${booking.departure_time}` },
+                { type: "mrkdwn", text: `*Hành khách:*\n${passengerMention}` }
+              ]
+            },
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: `*Hướng dẫn & Chuẩn bị hành lý:*\n\n${aiGuide}` }
+            }
+          ]
+        };
+
+        // Gửi thông báo đến Admin Channel (không chứa icon/emoji)
+        await postSlackMessage(ADMIN_CHANNEL_ID, reminderPayload);
+
+        // Gửi DM trực tiếp cho nhân viên sắp bay nếu có slack_user_id
+        if (booking.slack_user_id) {
+          await postSlackMessage(booking.slack_user_id, reminderPayload).catch(dmErr => {
+            console.error(`Không thể gửi DM nhắc bay cho ${booking.slack_user_id}:`, dmErr.message);
+          });
+        }
+
+        // 1. Cập nhật DynamoDB
+        await docClient.send(new UpdateCommand({
+          TableName: DYNAMODB_TABLE,
+          Key: { trip_id: tripId },
+          UpdateExpression: 'SET reminder_sent = :sent, last_synced_at = :now',
+          ExpressionAttributeValues: {
+            ':sent': 'SENT',
+            ':now': new Date().toISOString()
+          }
+        }));
+
+        // 2. Cập nhật Google Sheets Column U (Reminder_24h)
+        if (SPREADSHEET_ID && tripId) {
+          try {
+            const accessToken = await getGoogleAccessToken();
+            const sheetRes = await makeRequest(
+              `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!A:U`,
+              {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+              }
+            );
+            const rows = sheetRes.data?.values || [];
+            for (let i = 0; i < rows.length; i++) {
+              if (rows[i][0] && rows[i][0].toString().trim().toUpperCase() === tripId.toUpperCase()) {
+                const rowIndex = i + 1;
+                await makeRequest(
+                  `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TAB_NAME)}!U${rowIndex}?valueInputOption=USER_ENTERED`,
+                  {
+                    method: 'PUT',
+                    headers: {
+                      'Authorization': `Bearer ${accessToken}`,
+                      'Content-Type': 'application/json'
+                    }
+                  },
+                  { values: [['SENT']] }
+                );
+                break;
+              }
+            }
+          } catch (sheetErr) {
+            console.error(`Lỗi cập nhật Google Sheet cho chuyến ${tripId}:`, sheetErr);
+          }
+        }
+
+        remindersSent++;
+      } catch (bookingErr) {
+        console.error(`Lỗi xử lý nhắc bay cho chuyến ${tripId}:`, bookingErr);
+      }
     }
   }
 

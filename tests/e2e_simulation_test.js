@@ -529,7 +529,7 @@ async function runE2E() {
     const before = tripKeys().length;
     const callsBefore = outboundCalls.length;
     sheetsFailure = true;
-    await handler({ isAsyncWorker: true, manualBooking }, {});
+    await handler({ isAsyncWorker: true, manualBooking: { ...manualBooking, passenger_name: 'Tran Thi Rollback', flight_number: 'VN215', pnr: 'RBK215' } }, {});
     sheetsFailure = false;
     const failureNotice = outboundCalls.slice(callsBefore).some(c => c.body.includes('Không lưu được chuyến công tác'));
     recordE2E('E2E-FLOW-12', 'Sheets Failure Rolls Back DynamoDB and Notifies Admin', tripKeys().length === before && failureNotice);
@@ -543,9 +543,10 @@ async function runE2E() {
     const submission = {
       type: 'view_submission', user: { id: 'U_ADMIN_1' },
       view: { callback_id: 'travel_booking_modal', state: { values: {
-        ...field('name_block', 'name_input', 'Nguyen Van Test'),
-        ...field('flight_block', 'flight_input', 'VN214 - Vietnam Airlines'),
-        ...field('time_block', 'time_input', '2026-12-05 08:00')
+        ...field('name_block', 'name_input', 'Le Van Worker'),
+        ...field('flight_block', 'flight_input', 'VN216 - Vietnam Airlines'),
+        ...field('time_block', 'time_input', '2026-12-06 09:00'),
+        ...field('pnr_block', 'pnr_input', 'WRK216')
       } } }
     };
     const before = tripKeys().length;
@@ -554,7 +555,7 @@ async function runE2E() {
     const job = lambdaInvocations[0];
     const queuedOnly = tripKeys().length === before;
     await handler(job, {});
-    const pass = res.statusCode === 200 && job.isAsyncWorker && job.manualBooking.flight_number === 'VN214' &&
+    const pass = res.statusCode === 200 && job.isAsyncWorker && job.manualBooking.flight_number === 'VN216' &&
       queuedOnly && tripKeys().length === before + 1;
     recordE2E('E2E-FLOW-13', '/travel-admin Saves Through Async Worker', pass);
   } catch (e) {
@@ -812,6 +813,141 @@ async function runE2E() {
   } catch (e) {
     mockVisionResponse = null;
     recordE2E('E2E-FLOW-19', 'Concurrent Multi-User Drafts Isolated Per Thread in Same Channel', false, e.message);
+  }
+
+  // --------------------------------------------------------------------------
+  // FLOW 20-24: Duplicate Guard, Real PR Approval, Modal Validation, Cancel Trip, Multi-Image + TTL
+  // --------------------------------------------------------------------------
+  try {
+    const { saveTripRecord } = require('../lambda/slack_handler');
+    const before = tripKeys().length;
+    let dupCode = '';
+    try {
+      await saveTripRecord(manualBooking);
+    } catch (err) {
+      dupCode = err.code || '';
+    }
+    recordE2E('E2E-FLOW-20', 'Duplicate Booking Is Rejected Without Creating New Trip', dupCode === 'DUPLICATE_BOOKING' && tripKeys().length === before);
+  } catch (e) {
+    recordE2E('E2E-FLOW-20', 'Duplicate Booking Is Rejected Without Creating New Trip', false, e.message);
+  }
+
+  try {
+    const callsBefore = outboundCalls.length;
+    const prPayload = {
+      type: 'block_actions',
+      user: { id: 'U_REQ_1', username: 'minh_anh' },
+      channel: { id: 'C0CGLFPNW7R' },
+      actions: [{
+        action_id: 'submit_pr_approval',
+        value: JSON.stringify({ destination: 'Tokyo', departure_date: '2026-12-20', estimated_cost: 15000000, purpose: 'Họp đối tác', requester_id: 'U_REQ_1' })
+      }],
+      response_url: 'https://hooks.slack.com/actions/test/pr'
+    };
+    await handler(signed({ rawPath: '/slack/interactions', body: `payload=${encodeURIComponent(JSON.stringify(prPayload))}` }), {});
+    const prKeys = [...dbStore.keys()].filter(k => k.startsWith('PR-'));
+    const prId = prKeys[prKeys.length - 1];
+    const prSaved = prId && dbStore.get(prId).status === 'PENDING_APPROVAL';
+    const adminNotified = outboundCalls.slice(callsBefore).some(c => c.body.includes(prId) && c.body.includes('approve_pr'));
+
+    await handler(signed({
+      rawPath: '/slack/interactions',
+      body: `payload=${encodeURIComponent(JSON.stringify({
+        type: 'block_actions',
+        user: { id: 'U_HR_1' },
+        channel: { id: 'C0CGLFPNW7R' },
+        actions: [{ action_id: 'approve_pr', value: prId }],
+        response_url: 'https://hooks.slack.com/actions/test/pr_approve'
+      }))}`
+    }), {});
+    const prApproved = dbStore.get(prId)?.status === 'APPROVED_PR';
+    recordE2E('E2E-FLOW-21', 'Purchase Request Saved to DB and Approved by HR', Boolean(prSaved && adminNotified && prApproved));
+  } catch (e) {
+    recordE2E('E2E-FLOW-21', 'Purchase Request Saved to DB and Approved by HR', false, e.message);
+  }
+
+  try {
+    const field = (block, action, value) => ({ [block]: { [action]: { value } } });
+    const badModal = {
+      type: 'view_submission',
+      user: { id: 'U_ADMIN_1' },
+      view: {
+        callback_id: 'travel_booking_modal',
+        state: {
+          values: {
+            ...field('name_block', 'name_input', 'Test Validation'),
+            ...field('dep_iata_block', 'dep_iata_input', 'BAD1'),
+            ...field('arr_iata_block', 'arr_iata_input', 'HAN'),
+            ...field('time_block', 'time_input', '20/12/2026')
+          }
+        }
+      }
+    };
+    const res = await handler(signed({ rawPath: '/slack/interactions', body: `payload=${encodeURIComponent(JSON.stringify(badModal))}` }), {});
+    const body = JSON.parse(res.body || '{}');
+    const pass = res.statusCode === 200 && body.response_action === 'errors' && body.errors?.dep_iata_block && body.errors?.time_block;
+    recordE2E('E2E-FLOW-22', 'Modal Validation Rejects Invalid IATA & Datetime Format', Boolean(pass));
+  } catch (e) {
+    recordE2E('E2E-FLOW-22', 'Modal Validation Rejects Invalid IATA & Datetime Format', false, e.message);
+  }
+
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    const { executeBIQuery } = require('../lambda/bi_analytics_service');
+    const targetTripId = tripKeys()[0];
+    await handleSlackEvent({
+      type: 'message',
+      channel: 'C0CGLFPNW7R',
+      user: 'U_HR_1',
+      text: `Hủy chuyến ${targetTripId} do dời lịch`,
+      ts: '1700000500.000100'
+    });
+    const cancelledItem = dbStore.get(targetTripId);
+    const biStats = executeBIQuery([...dbStore.values()], { query_type: 'COST_SUMMARY' });
+    const excludedFromBI = !biStats.matched_trips.some(t => t.trip_id === targetTripId);
+    recordE2E('E2E-FLOW-23', 'HR Can Cancel Saved Trip and Exclude From BI Totals', cancelledItem?.status === 'CANCELLED' && excludedFromBI);
+  } catch (e) {
+    recordE2E('E2E-FLOW-23', 'HR Can Cancel Saved Trip and Exclude From BI Totals', false, e.message);
+  }
+
+  try {
+    const { handleSlackEvent } = require('../lambda/slack_handler');
+    const multiChannel = 'C0CH1CC22FL';
+    const multiTs = '1700000600.000100';
+    mockVisionResponse = {
+      is_flight_ticket: true,
+      rejection_reason: '',
+      passenger_name: 'PHAM VAN MULTI',
+      airline: 'Bamboo Airways',
+      flight_number: 'QH202',
+      departure_iata: 'SGN',
+      arrival_iata: 'HAN',
+      departure_time: '2026-12-22 09:00',
+      arrival_time: '2026-12-22 11:10',
+      pnr: 'MLT001',
+      ticket_class: 'Economy',
+      ticket_price: '1900000'
+    };
+    await handleSlackEvent({
+      type: 'message',
+      channel: multiChannel,
+      user: 'U_MULTI_1',
+      ts: multiTs,
+      files: [
+        { id: 'F_M1', name: 'leg1.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-M1/leg1.png' },
+        { id: 'F_M2', name: 'leg2.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-M2/leg2.png' }
+      ]
+    });
+    mockVisionResponse = null;
+
+    const d1 = dbStore.get(`DRAFT#${multiChannel}#${multiTs}#1`);
+    const d2 = dbStore.get(`DRAFT#${multiChannel}#${multiTs}#2`);
+    const evt = dbStore.get(`EVENT#${multiChannel}#${multiTs}`);
+    const pass = Boolean(d1 && d2 && d1.ttl > 0 && d2.ttl > 0 && evt && evt.ttl > 0);
+    recordE2E('E2E-FLOW-24', 'Multi-Image Upload Creates Distinct Drafts With TTL', pass);
+  } catch (e) {
+    mockVisionResponse = null;
+    recordE2E('E2E-FLOW-24', 'Multi-Image Upload Creates Distinct Drafts With TTL', false, e.message);
   }
 
   // --------------------------------------------------------------------------

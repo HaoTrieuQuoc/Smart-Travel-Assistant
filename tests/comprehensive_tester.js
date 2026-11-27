@@ -60,7 +60,9 @@ const {
   formatPassengerName,
   normalizeTicketData,
   buildTicketPreviewCard,
-  buildDraftKey
+  buildDraftKey,
+  computeBookingFingerprint,
+  validateModalTicketInputs
 } = require('../lambda/slack_handler');
 
 const {
@@ -920,6 +922,38 @@ try {
     recordTest('TC-DRAFT-01', 'Thread Draft Isolation', 'buildDraftKey generates distinct keys per thread in same channel', 'PASS');
   } else {
     recordTest('TC-DRAFT-01', 'Thread Draft Isolation', `Unexpected keys: ${keyA}, ${keyB}, ${keyFallback}`, 'FAIL');
+  }
+
+  // TC-DUP-01: Duplicate booking fingerprint ignores accents/case and distinguishes different flights
+  const fp1 = computeBookingFingerprint({ pnr: 'abc123', flight_number: 'vn214', passenger_name: 'Nguyễn Văn A', departure_time: '2026-12-05 08:00' });
+  const fp2 = computeBookingFingerprint({ pnr: 'ABC123', flight_number: 'VN214', passenger_name: 'NGUYEN VAN A', departure_time: '2026-12-05 08:00' });
+  const fp3 = computeBookingFingerprint({ pnr: 'XYZ999', flight_number: 'VN214', passenger_name: 'NGUYEN VAN A', departure_time: '2026-12-05 08:00' });
+  if (fp1 === fp2 && fp1 !== fp3) {
+    recordTest('TC-DUP-01', 'Duplicate Booking Guard', 'computeBookingFingerprint normalizes PNR/flight/passenger consistently', 'PASS');
+  } else {
+    recordTest('TC-DUP-01', 'Duplicate Booking Guard', 'Fingerprint mismatch', 'FAIL');
+  }
+
+  // TC-VAL-01: Modal input validation catches bad IATA, time format, and email
+  const badInputs = validateModalTicketInputs({ depIata: 'SG', arrIata: '123', depTime: '05/12/2026 8h', arrTime: 'bad', email: 'not-an-email' });
+  const goodInputs = validateModalTicketInputs({ depIata: 'SGN', arrIata: 'HAN', depTime: '2026-12-05 08:30', arrTime: '2026-12-05 10:40', email: 'hao@company.com' });
+  if (Object.keys(badInputs).length === 5 && Object.keys(goodInputs).length === 0) {
+    recordTest('TC-VAL-01', 'Modal Input Validation', 'Rejects invalid IATA/datetime/email and accepts valid inputs', 'PASS');
+  } else {
+    recordTest('TC-VAL-01', 'Modal Input Validation', `Unexpected validation errors: ${JSON.stringify({ badInputs, goodInputs })}`, 'FAIL');
+  }
+
+  // TC-BI-05: BI filter excludes PR- and CANCELLED records
+  const { filterConfirmedTrips } = require('../lambda/bi_analytics_service');
+  const biFiltered = filterConfirmedTrips([
+    { trip_id: 'TRIP-202612-100001', status: 'APPROVED', ticket_price: '2000000' },
+    { trip_id: 'TRIP-202612-100002', status: 'CANCELLED', ticket_price: '5000000' },
+    { trip_id: 'PR-202612-100003', record_type: 'PURCHASE_REQUEST', status: 'PENDING_APPROVAL', estimated_cost: 3000000 }
+  ]);
+  if (biFiltered.length === 1 && biFiltered[0].trip_id === 'TRIP-202612-100001') {
+    recordTest('TC-BI-05', 'AI Travel BI Engine', 'Excludes CANCELLED trips and PR- records from BI analytics', 'PASS');
+  } else {
+    recordTest('TC-BI-05', 'AI Travel BI Engine', `Unexpected filtered items: ${JSON.stringify(biFiltered)}`, 'FAIL');
   }
 } catch (e) {
   recordTest('TC-OCR-01', 'Image Classification', 'OCR classification test exception', 'FAIL', e.message);

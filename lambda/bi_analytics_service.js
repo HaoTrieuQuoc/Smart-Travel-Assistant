@@ -54,14 +54,16 @@ function parsePriceVnd(rawPrice) {
 }
 
 /**
- * Filter out non-trip system records (DRAFT#, EVENT#)
+ * Filter out non-trip system records (DRAFT#, EVENT#, PR-) and CANCELLED bookings
  */
 function filterConfirmedTrips(items) {
   if (!Array.isArray(items)) return [];
   return items.filter(item => {
     const id = String(item?.trip_id || '');
     if (!id) return false;
-    if (id.startsWith('DRAFT#') || id.startsWith('EVENT#')) return false;
+    if (id.startsWith('DRAFT#') || id.startsWith('EVENT#') || id.startsWith('PR-')) return false;
+    if (item?.record_type === 'PURCHASE_REQUEST') return false;
+    if (String(item?.status || '').toUpperCase() === 'CANCELLED') return false;
     return true;
   });
 }

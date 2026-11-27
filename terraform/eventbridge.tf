@@ -1,9 +1,9 @@
-# EventBridge Rule for Daily 24h Flight Reminders
-# Triggers at 01:00 UTC every day (08:00 AM GMT+7 Vietnam Time)
+# EventBridge Rule for Hourly 24h Flight Reminders
+# Runs every hour so flights departing within the next 24h are reminded on time
 resource "aws_cloudwatch_event_rule" "daily_flight_reminder" {
   name                = "${var.project_name}-daily-reminder-rule"
-  description         = "Triggers 24-hour flight reminder Lambda daily at 08:00 AM VN time"
-  schedule_expression = "cron(0 1 * * ? *)"
+  description         = "Triggers 24-hour flight reminder Lambda every hour"
+  schedule_expression = "rate(1 hour)"
 
   tags = {
     Name = "${var.project_name}-daily-reminder-rule"

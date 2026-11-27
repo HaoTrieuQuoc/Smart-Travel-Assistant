@@ -31,6 +31,11 @@ resource "aws_dynamodb_table" "travel_bookings" {
     enabled = true
   }
 
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
   server_side_encryption {
     enabled = true
   }
